@@ -1,0 +1,51 @@
+{
+  "version": "complete-v1-public-inventory-v1",
+  "scope": "Independent synthetic software tests only; not formal evaluation or owner sign-off.",
+  "command": ".\\.venv\\Scripts\\python.exe -B tools/run_public_tests.py",
+  "python_modules": [
+    "tests/test_api_contract.py",
+    "tests/test_event_adapter.py",
+    "tests/test_event_contract.py",
+    "tests/test_m31_ocr_and_b2.py",
+    "tests/test_m3_extraction.py",
+    "tests/test_m4_reconstruction.py",
+    "tests/test_m51_integration.py",
+    "tests/test_m52_layout.py",
+    "tests/test_m5_api.py",
+    "tests/test_m5_policy.py",
+    "tests/test_m5_review.py",
+    "tests/test_m6_api_frontend.py",
+    "tests/test_m6_calendar.py",
+    "tests/test_m71_integration.py",
+    "tests/test_m7_analysis.py",
+    "tests/test_markdown_links.py",
+    "tests/test_normalizer.py",
+    "tests/test_portable_s4b_v1.py",
+    "tests/test_research_baseline_reader.py",
+    "tests/test_research_readiness.py",
+    "tests/test_research_workflow.py",
+    "tests/test_s2a_ruled.py",
+    "tests/test_s2b_blocks.py",
+    "tests/test_s3a_controls.py",
+    "tests/test_s3b_frontend.py",
+    "tests/test_s3b_review.py",
+    "tests/test_s3c_frontend.py",
+    "tests/test_s3c_workflow.py",
+    "tests/test_s4a_acceptance.py",
+    "tests/test_s4bf1_frontend.py"
+  ],
+  "additional_node_security_check": "tests/s4b_transport_checks.js",
+  "portable_s4b_resource_version": "portable-s4b-v1",
+  "historical_exclusions": {
+    "tests/s4b_demo_host.py": "Historical host depends on excluded retained inputs; use portable-s4b-v1, no live enrollment.",
+    "tests/test_s4b_transport.py": "34 historical tests retained only in original project; portable tests plus explicit Node security checks used here."
+  },
+  "historical_local_844": "Not the public inventory result; excluded historical cases are not counted as passes.",
+  "required_external_runtimes": [
+    "Python 3.12",
+    "Node",
+    "English Tesseract for live OCR tests"
+  ],
+  "protected_resources_shipped": false,
+  "live_enrollment_permitted": false
+}

@@ -1,3 +1,5 @@
+> Historical record for starter commit `ea3b20132508d20b13c420bd10e9e07f2e03ac1d`. Its eight-test scope and exclusions describe that earlier snapshot only. For the integrated application use [current installation/tests](installation-and-test-results.json) and [integration review](github-integration-review.md).
+
 # Starter verification — 27 October 2026
 
 **READY_FOR_MANUAL_PUBLICATION_REVIEW — PROJECT STARTER ONLY.** This does not clear the 18 held source files or declare the full application runnable, approved, evaluated or signed off.

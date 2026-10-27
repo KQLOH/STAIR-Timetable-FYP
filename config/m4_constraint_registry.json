@@ -1,0 +1,179 @@
+{
+  "version": "m4-catalogue-v1",
+  "authority": "Approved Research Report, physical pages 65,67-68,115-119; Supervision Answers paragraphs 82,85",
+  "freeze_status": "NOT_FROZEN_PRE02",
+  "rules": [
+    {
+      "id": "S01",
+      "name": "Core field representation",
+      "source": "Report Table 3.5/Table 4.3",
+      "scope": "event",
+      "class": "HARD_SHARED",
+      "applicability": "emitted assignment",
+      "missing": "fail MISSING_REQUIRED; retain candidate",
+      "p1": "exclude",
+      "b3": "exclude identically",
+      "tests": [
+        "test_missing_core_retained_skeleton"
+      ]
+    },
+    {
+      "id": "S02",
+      "name": "Canonical field type and vocabulary",
+      "source": "Report Table 3.5/Table 4.3; M1 registry",
+      "scope": "event",
+      "class": "HARD_SHARED",
+      "applicability": "all assigned fields",
+      "missing": "explicit field states; no invented SOURCE_ABSENT",
+      "p1": "exclude invalid representation",
+      "b3": "exclude identically",
+      "tests": [
+        "test_schema_provenance",
+        "test_invalid_vocabulary_shared"
+      ]
+    },
+    {
+      "id": "OWNERSHIP",
+      "name": "Exclusive field-node ownership",
+      "source": "Report Algorithm 4.1 step 4, physical page 115",
+      "scope": "component",
+      "class": "HARD_SHARED",
+      "applicability": "exclusive source spans; explicitly shared headers/context exempt",
+      "missing": "do not assume sharing",
+      "p1": "exclude incompatible ownership",
+      "b3": "exclude identically",
+      "tests": [
+        "test_exclusive_ownership",
+        "test_multiple_sessions_one_cell"
+      ]
+    },
+    {
+      "id": "T01",
+      "name": "Source-local interval",
+      "source": "Report Table 3.5/Table 4.3",
+      "scope": "event",
+      "class": "HARD_ABLATED",
+      "applicability": "source local start/end present",
+      "missing": "unknown explicit overnight marker blocks overnight interpretation",
+      "p1": "exclude invalid interval",
+      "b3": "diagnose only",
+      "tests": [
+        "test_temporal_order_p1_and_b3",
+        "test_explicit_overnight",
+        "test_end_of_day"
+      ]
+    },
+    {
+      "id": "R01",
+      "name": "Verified term and exceptions",
+      "source": "Report Table 3.5/Table 4.3",
+      "scope": "event",
+      "class": "HARD_ABLATED",
+      "applicability": "explicit weekly recurrence",
+      "missing": "unresolved term/exception authority blocks P1 selection",
+      "p1": "exclude unsupported recurrence",
+      "b3": "diagnose only",
+      "tests": [
+        "test_recurrence_unknown_authority_blocks_p1",
+        "test_recurrence_with_source_bounds_and_attested_authority",
+        "test_out_of_term_recurrence",
+        "test_invalid_source_term_date_remains_unresolved"
+      ]
+    },
+    {
+      "id": "C01",
+      "name": "Same-cohort overlap",
+      "source": "Report Table 3.5/Table 4.3",
+      "scope": "component",
+      "class": "HARD_ABLATED",
+      "applicability": "evidenced same cohort and comparable occurrence/week scope; explicit alternatives exempt",
+      "missing": "unknown cohort/week/group relationship is diagnostic, not an assumed conflict",
+      "p1": "exclude demonstrated conflicting assignment",
+      "b3": "diagnose only",
+      "tests": [
+        "test_same_cohort_overlap",
+        "test_distinct_cohorts",
+        "test_tutorial_group_distinctions",
+        "test_different_week_ranges",
+        "test_hard_overlap_cannot_be_evaded_by_week_omission"
+      ]
+    },
+    {
+      "id": "T02",
+      "name": "Authoritative timezone export gate",
+      "source": "Report physical pages 65,67,119",
+      "scope": "downstream export",
+      "class": "EXPORT_GATE_SHARED",
+      "applicability": "conversion/export requested later",
+      "missing": "TIMEZONE_UNRESOLVED; preserve safe source-local reconstruction",
+      "p1": "diagnostic gate; no decode pruning",
+      "b3": "same gate",
+      "tests": [
+        "test_timezone_gate_never_prunes",
+        "test_timezone_authority_gate"
+      ]
+    },
+    {
+      "id": "D01",
+      "name": "Unique managed remote target",
+      "source": "Report physical pages 119-120",
+      "scope": "calendar adapter",
+      "class": "DEFERRED_ADAPTER_GATE",
+      "applicability": "fresh remote snapshot at later milestone",
+      "missing": "NOT_IMPLEMENTED_IN_M4; no calendar action",
+      "p1": "not a decoder rule",
+      "b3": "not a decoder rule",
+      "tests": [
+        "test_status_separation"
+      ]
+    },
+    {
+      "id": "P01",
+      "name": "Weak provenance support",
+      "source": "Report Tables 3.5/4.3",
+      "scope": "event/component",
+      "class": "SOFT_ABLATED",
+      "applicability": "frozen support criterion supplied",
+      "missing": "NOT_ASSESSED; registered configuration blocked",
+      "p1": "subtract configured nonnegative penalty",
+      "b3": "zero contribution",
+      "tests": [
+        "test_explicit_support_and_soft_penalty_matching",
+        "test_nonzero_score_requires_explicit_maps"
+      ]
+    },
+    {
+      "id": "P02",
+      "name": "Atypical binding",
+      "source": "Report Tables 3.5/4.3",
+      "scope": "event/component",
+      "class": "SOFT_ABLATED",
+      "applicability": "frozen relation range supplied; explicit merged-span exception",
+      "missing": "NOT_ASSESSED; registered configuration blocked",
+      "p1": "subtract configured nonnegative penalty",
+      "b3": "zero contribution",
+      "tests": [
+        "test_explicit_support_and_soft_penalty_matching",
+        "test_time_relationships_preserve_pairing"
+      ],
+      "implementation_status": "Provisional relation-index penalty infrastructure only; frozen geometry/lexical criteria and merged-span exception definition blocked"
+    },
+    {
+      "id": "DIAGNOSTICS",
+      "name": "Week exclusions, possible duplicate, unknown scope/completeness",
+      "source": "M4 user scope; not additional registered hard rules",
+      "scope": "timetable",
+      "class": "DIAGNOSTIC_ONLY",
+      "applicability": "visible inconsistency or missing authority",
+      "missing": "retain unknown",
+      "p1": "never prunes",
+      "b3": "same diagnostics",
+      "tests": [
+        "test_week_diagnostic_not_new_hard_rule",
+        "test_date_weekday_diagnostic_only",
+        "test_possible_duplicate_without_cohort_is_diagnostic",
+        "test_status_separation"
+      ]
+    }
+  ]
+}

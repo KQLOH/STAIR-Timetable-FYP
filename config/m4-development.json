@@ -1,0 +1,23 @@
+{
+  "profile_id": "m4-development-v1",
+  "status": "PROVISIONAL_APPLICATION_ONLY",
+  "algorithm": "finite-assignment-search-m4-v1",
+  "base_weights": {"extraction":0,"relations":0,"completeness":10000},
+  "route_support_tables": {},
+  "omission_cost_units": 0,
+  "soft_weights": {"P01":0,"P02":0},
+  "provenance_min_support_units": null,
+  "typical_relation_min_units": null,
+  "max_field_spans": 12,
+  "max_field_values": 8,
+  "max_edges_per_group": 64,
+  "max_component_groups": 12,
+  "max_assignments": 250000,
+  "max_operations": 2000000,
+  "watchdog_seconds": 30,
+  "header_max_gap": 200,
+  "header_gap_unit": "source_coordinate_units_PROVISIONAL",
+  "trace_limit": 256,
+  "registered_blockers": ["PRE01_NOT_READY","PRE02_NOT_FROZEN","DEVELOPMENT_SCORE_SELECTION_MISSING","ROUTE_SUPPORT_TABLES_MISSING","RELATION_COMPATIBILITY_FREEZE_MISSING","SOFT_CRITERIA_MISSING","OMISSION_COST_FREEZE_MISSING","COORDINATE_MAPPING_AND_CAP_FREEZE_MISSING"],
+  "score_note": "Completeness-only development objective. Units are heuristic support, never calibrated probabilities. No registered scoring weights are claimed."
+}

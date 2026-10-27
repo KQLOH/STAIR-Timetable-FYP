@@ -1,12 +1,5 @@
-# Contribution workflow
+# Contributing
 
-This PUBLIC repository begins as a project starter, not a runnable V1.0 application. Read [AGENTS.md](AGENTS.md), [scope](docs/scope-and-status.md) and [public safety](docs/public-safety.md).
+Follow [AGENTS.md](AGENTS.md), [setup](docs/setup.md), [team workflow](docs/team-workflow.md) and [scope](docs/scope-and-status.md). Work on a feature branch and propose a reviewed change to main. Keep patches scoped and run the public tests. No automatic real calendar writes, private uploads, held-out development or changes to registered research conditions.
 
-1. Open a scoped issue, identify the author and the other student's reviewer, and explain the intended change before editing.
-2. Work on the agreed branch: Student A uses `feature/real-timetable-recognition`; Student B uses `research/r2-gold-preparation`. Keep `main` reviewed and understandable. These names are instructions for future manual work, not branches already created.
-3. Use independent synthetic examples and planning templates. Public proposals must say PROPOSED / NOT APPROVED. Actual Gold, private timetable/permission/person records and held-out material stay outside all public branches and PRs.
-4. Run the starter tests/link checker for starter changes. Future approved code needs its own meaningful tests and complete dependencies; report actual results and limitations.
-5. Review exact files and staged diff. Never blanket-add local material, force-add protected evidence, force-push, mirror all refs or import old Git history.
-6. Submit a PR to `main`; the other student reviews scope, source rights, privacy, tests and research boundaries. The owner decides whether to merge. Do not merge your own unreviewed change just to make progress visible.
-
-Role allocation is in [team workflow](docs/team-workflow.md). New source requires the separate [source-release gates](docs/public-safety.md); the starter does not grant permission for the 18 held files. End each task with changed files, implemented/proposed work, actual checks, limitations and next step. No fake Gold, test results or owner/supervisor approval.
+The FYP team leader manages source-sharing and publication permissions. This local integration does not assert a new project license. Do not infer a license from installed dependencies, a public URL or this file. Preserve source provenance and obtain actual permission/required notices for introduced third-party material. Never stage secrets, local OCR configuration, private data, environments or retained journals.
