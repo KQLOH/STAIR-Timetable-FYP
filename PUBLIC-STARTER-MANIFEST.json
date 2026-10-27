@@ -1,0 +1,122 @@
+{
+  "status": "READY_FOR_MANUAL_PUBLICATION_REVIEW",
+  "release_kind": "PROJECT_STARTER_NOT_FULL_V1",
+  "target_repository": "STAIR-Timetable-FYP",
+  "visibility": "PUBLIC",
+  "file_count": 20,
+  "application_included": false,
+  "application_runnable": false,
+  "runnable_examples": [
+    "standard-library offline Markdown checker",
+    "8 synthetic documentation tests"
+  ],
+  "third_party_dependencies": 0,
+  "full_application_tests_run": false,
+  "git_clone_tested": false,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "d60f352d0db1404c70afb4bb8b2ca3fd1c610572aa40720e8a0b7baa7885418c",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "c7fb782adac84ef0d3e77898dbedff9610ca4e27a1a1f0085845fc009576a410",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "b45183af06776a477d2c14b8412fd8d6d637825b05bda99ae5e26e22f7ede195",
+      "origin": "REVIEWED_AGENTS_COPY_UTF8_LF"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "0e3c63b1dd720a3839f87267e2eaa46a19a2eea9abb47d91465a0946cd752c62",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "README.md",
+      "sha256": "4202411155a6fd18a45f3bbaa3d1d65d5af2beaa7e9278c96db35b4ad1464eb7",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "1c4f8e47fe7ce46c9ff5373bb99c14aecca63f598dcc33342b235e2218eaccea",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/github-upload.md",
+      "sha256": "021e7e3d4fd5a9118a4194c2f7cef8abf92bee3209b2510789b5880c71286106",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/public-safety.md",
+      "sha256": "5a8b87c41eee4310e87343427aaaee7be512983b56664e96911e6c53f923e2a9",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/research-roadmap.md",
+      "sha256": "943d0155c86b165da259a33f5cf804989eb5e88226dfd3b2c8ad58cc4f6ee11a",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/scope-and-status.md",
+      "sha256": "6e4c9d458d34839cca898c9b125ba838af826a4b918c505c5cd7057a7f148e95",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/setup.md",
+      "sha256": "4e13900f38788ce8344e8e951bea6c6b2cb4d6b314893714cca9980eabbd3785",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/starter-verification.md",
+      "sha256": "b10fbddee735f5ef8665273847ec8fe51556c5af79c2b6566d523ada9db51c76",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "docs/team-workflow.md",
+      "sha256": "b2f9450398ec7cc9b673098d23dd86a560a48c6288e0326812b63f01c70fd5f7",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "starter_tools/__init__.py",
+      "sha256": "f7cf4c306c58020031c12b65357d0f1e2fb573b4ac4960749bbca42f9151126a",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "starter_tools/markdown_links.py",
+      "sha256": "2d35936bc7e9048d926f92ef1cb0ad80e4d3f8443c0bdb1c1a4d019e4de774a8",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "templates/annotation-guide-proposal.md",
+      "sha256": "6fe1915264a54d89da50e4f4515994d24fbbcedc9443996d1292a45ef95daeae",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "templates/audit-29-page-workflow-proposal.md",
+      "sha256": "150eaa3eb7c947f1ae8e9d69eb8af0c5b365bda0eb427dd74406ff0cac95479f",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "templates/source-inventory-template.csv",
+      "sha256": "7db051244271f63a284999d38cc8ea8cb3c8ce81008805cf9f4afd89ae005b8b",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    },
+    {
+      "path": "tests/test_markdown_links.py",
+      "sha256": "c43bab0df112cd27e61156c9ab076b48cfb0872208c239547c1548de14dbfff7",
+      "origin": "NEW_FOR_PUBLIC_STARTER"
+    }
+  ],
+  "manifest_self_digest": "Recorded externally in owner handover/local receipt; not self-embedded",
+  "original_agents_source_sha256": "40e9decfaebe4d71fed76a3c5f165cb2971bcfa4b4e4e413102fa9967cbb7bd0",
+  "exclusions": {
+    "original_visible_files_not_copied": 333,
+    "g3_catalogue_paths_not_copied": 175,
+    "uncleared_original_files_not_copied": 18,
+    "protected_directories": "Not scanned/enumerated or copied"
+  },
+  "no_git_initialization_or_github_operations_performed": true
+}
