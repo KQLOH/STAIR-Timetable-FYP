@@ -1,0 +1,17 @@
+{
+  "version": "portable-s4b-v1",
+  "classification": "INDEPENDENT_SYNTHETIC_TEST_RESOURCES_NOT_HISTORICAL_APPROVAL",
+  "files": {
+    "tests/portable_s4b_spec_v1.json": "fdc41a023ca9a302ce057b298716015d85a1828eba908c65f2f55e347fa1931d",
+    "tests/s4b_host_bootstrap.js": "4cc584e98a7eda3e3db6b611e6fb9c1a86c5c6b83ef7866c368b5a047403e0e7",
+    "tests/s4b_transport.py": "075413f031abb761f7c3a2a7e974417f28f997b3bdbb2a91474d63589c6d57ef",
+    "tests/s4b_transport_checks.js": "5ab9a81561f6197bb56c4734b0bc6eea4d0777f41341fce999b67f2610453cb3"
+  },
+  "review": {
+    "event_count": 2,
+    "pdf_sha256": "3436a147f7200bd50f13e320c449fb6ce41e8c8a021d149f6fa26fccbc0c909a",
+    "wire_filename": "S4B-G01-review.pdf",
+    "wire_bytes": 1533
+  },
+  "runtime_identity_policy": "Fresh credentials/UUIDs per isolated instance; exact instance digests bound before enrollment; no live host."
+}

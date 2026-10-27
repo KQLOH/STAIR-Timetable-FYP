@@ -1,0 +1,412 @@
+{
+  "status": "INTEGRATED_CHECKOUT_VERIFICATION_PASSED",
+  "timestamp_utc": "2026-10-27T05:45:02.624373+00:00",
+  "verified_location": "Existing GitHub checkout on feature/complete-v1-handover",
+  "starter_commit_preserved": "ea3b20132508d20b13c420bd10e9e07f2e03ac1d",
+  "environment": {
+    "python": "3.12.14",
+    "fresh_environment_in_integrated_checkout": true,
+    "system_site_packages_enabled": false,
+    "pip_check": "PASS",
+    "locked_distributions": [
+      {
+        "name": "annotated-doc",
+        "version": "0.0.5"
+      },
+      {
+        "name": "annotated-types",
+        "version": "0.8.0"
+      },
+      {
+        "name": "anyio",
+        "version": "4.15.1"
+      },
+      {
+        "name": "beautifulsoup4",
+        "version": "4.12.3"
+      },
+      {
+        "name": "certifi",
+        "version": "2026.10.23"
+      },
+      {
+        "name": "cffi",
+        "version": "2.1.1"
+      },
+      {
+        "name": "charset-normalizer",
+        "version": "3.5.2"
+      },
+      {
+        "name": "click",
+        "version": "8.5.0"
+      },
+      {
+        "name": "cryptography",
+        "version": "50.0.2"
+      },
+      {
+        "name": "fastapi",
+        "version": "0.162.0"
+      },
+      {
+        "name": "h11",
+        "version": "0.16.0"
+      },
+      {
+        "name": "httpcore",
+        "version": "1.0.9"
+      },
+      {
+        "name": "httptools",
+        "version": "0.9.0"
+      },
+      {
+        "name": "httpx",
+        "version": "0.28.1"
+      },
+      {
+        "name": "idna",
+        "version": "3.20"
+      },
+      {
+        "name": "lxml",
+        "version": "5.3.0"
+      },
+      {
+        "name": "numpy",
+        "version": "2.3.5"
+      },
+      {
+        "name": "opentelemetry-api",
+        "version": "1.45.1"
+      },
+      {
+        "name": "packaging",
+        "version": "26.3"
+      },
+      {
+        "name": "pdfminer.six",
+        "version": "20260107"
+      },
+      {
+        "name": "pdfplumber",
+        "version": "0.11.10"
+      },
+      {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      {
+        "name": "pycparser",
+        "version": "3.12"
+      },
+      {
+        "name": "pydantic",
+        "version": "2.14.1"
+      },
+      {
+        "name": "pydantic_core",
+        "version": "2.50.1"
+      },
+      {
+        "name": "pypdfium2",
+        "version": "5.14.0"
+      },
+      {
+        "name": "pytesseract",
+        "version": "0.3.13"
+      },
+      {
+        "name": "python-dotenv",
+        "version": "1.2.4"
+      },
+      {
+        "name": "PyYAML",
+        "version": "6.0.3"
+      },
+      {
+        "name": "reportlab",
+        "version": "4.5.1"
+      },
+      {
+        "name": "requests",
+        "version": "2.34.2"
+      },
+      {
+        "name": "soupsieve",
+        "version": "3.0.4"
+      },
+      {
+        "name": "starlette",
+        "version": "1.8.0"
+      },
+      {
+        "name": "typing-inspection",
+        "version": "0.4.4"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0"
+      },
+      {
+        "name": "tzdata",
+        "version": "2026.5"
+      },
+      {
+        "name": "urllib3",
+        "version": "2.8.0"
+      },
+      {
+        "name": "uvicorn",
+        "version": "0.54.0"
+      },
+      {
+        "name": "watchfiles",
+        "version": "1.3.0"
+      },
+      {
+        "name": "websockets",
+        "version": "17.3"
+      }
+    ],
+    "public_https_wheel_downloads": 40,
+    "import_paths": {
+      "fastapi": ".venv/Lib/site-packages/fastapi/__init__.py",
+      "pydantic": ".venv/Lib/site-packages/pydantic/__init__.py",
+      "lxml": ".venv/Lib/site-packages/lxml/__init__.py",
+      "numpy": ".venv/Lib/site-packages/numpy/__init__.py",
+      "PIL": ".venv/Lib/site-packages/PIL/__init__.py",
+      "pdfplumber": ".venv/Lib/site-packages/pdfplumber/__init__.py",
+      "pytesseract": ".venv/Lib/site-packages/pytesseract/__init__.py",
+      "reportlab": ".venv/Lib/site-packages/reportlab/__init__.py",
+      "starlette": ".venv/Lib/site-packages/starlette/__init__.py"
+    },
+    "application_import": "backend/main.py"
+  },
+  "python_public_inventory": {
+    "errored": 0,
+    "expected_failures": 0,
+    "failed": 0,
+    "passed": 818,
+    "run": 818,
+    "skipped": 0,
+    "unexpected_successes": 0
+  },
+  "unittest_seconds": 67.084,
+  "additional_node_transport_security_exit_code": 0,
+  "public_inventory_equal_to_previously_verified_818_test_ids": true,
+  "historical_844_test_count": "Historical only; 34 original S4B cases excluded, 8 starter doc tests added. Excluded cases not counted as passes.",
+  "actual_loopback_http": {
+    "scope": "Actual loopback services from integrated existing GitHub checkout; not research accuracy or owner sign-off",
+    "passed": 30,
+    "failed": 0,
+    "checks": [
+      {
+        "name": "real_backend_health",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "real_frontend_html",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./styles.css",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/upload.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/intranet.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/analysis.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/controls.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/review.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/sandbox.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_asset:./js/app.js",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "frontend_origin_cors",
+        "passed": true
+      },
+      {
+        "name": "frontend_not_serving_repository:/AGENTS.md",
+        "passed": true
+      },
+      {
+        "name": "frontend_not_serving_repository:/data/temp/",
+        "passed": true
+      },
+      {
+        "name": "frontend_not_serving_repository:/.git/config",
+        "passed": true
+      },
+      {
+        "name": "existing_english_ocr_runtime",
+        "passed": true,
+        "engine_version": "tesseract v5.5.3.20260724",
+        "wrapper_version": "0.3.13",
+        "languages": [
+          "eng"
+        ]
+      },
+      {
+        "name": "native_pdf",
+        "passed": true,
+        "status": 200,
+        "evidence_spans": 1,
+        "evidence_route": "native_pdf",
+        "bounded_evidence_coordinates": true
+      },
+      {
+        "name": "real_png_ocr",
+        "passed": true,
+        "status": 200,
+        "evidence_spans": 1,
+        "evidence_route": "ocr",
+        "bounded_evidence_coordinates": true
+      },
+      {
+        "name": "registered_ocr_route:B1",
+        "passed": true,
+        "status": 200,
+        "candidate_count": 1,
+        "route": "ocr"
+      },
+      {
+        "name": "registered_ocr_route:B2",
+        "passed": true,
+        "status": 200,
+        "candidate_count": 1,
+        "route": "ocr"
+      },
+      {
+        "name": "registered_ocr_route:B2H-v1",
+        "passed": true,
+        "status": 200,
+        "candidate_count": 1,
+        "route": "ocr"
+      },
+      {
+        "name": "invalid_file_rejected",
+        "passed": true,
+        "status": 422
+      },
+      {
+        "name": "explicit_layout_profile:ocr-ruled-grid-s2a-v1",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "explicit_layout_profile:ocr-block-grid-s2b-v1",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "p1_development_http",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "conservative_policy_http",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "read_only_calendar_preview",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "bounded_analysis_http",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "production_default_deny:/api/review/session",
+        "passed": true,
+        "status": 403
+      },
+      {
+        "name": "production_default_deny:/api/review/queue",
+        "passed": true,
+        "status": 403
+      },
+      {
+        "name": "production_default_deny:/api/calendar/v1/test-only/session",
+        "passed": true,
+        "status": 403
+      }
+    ],
+    "live_enrollment": false,
+    "university_login": false,
+    "external_calendar": false
+  },
+  "browser": {
+    "actual_browser": true,
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "document_scroll_width": 1265
+    },
+    "verified": [
+      "frontend startup",
+      "actual synthetic PNG file-chooser upload",
+      "real OCR and default development reconstruction complete",
+      "one CS101 hypothesis with date unresolved",
+      "source text and pixel coordinates visible",
+      "M5 ABSTAIN / NOT_VERIFIED / calendar BLOCKED",
+      "calendar page remains unenrolled; preview/approve/execute mutations disabled"
+    ],
+    "screenshot_sha256": "647aafab3d1d2576ed75c621736fcb0a62eb8769a2242d1dd5742a4ce0c16bb1",
+    "screenshot_retained_privately": true,
+    "live_pairing_performed": false,
+    "limits": "No new exact319/390px browser run; existing responsive regression tests passed."
+  },
+  "isolation": {
+    "integrated_guard_violations": [],
+    "scope": "Python file/socket audit; child processes are not an OS sandbox"
+  },
+  "services_stopped": {
+    "backend8000": true,
+    "frontend5500": true,
+    "temporary_browser_tab_closed": true
+  },
+  "external_ocr": "Existing English Tesseract selected by child-process explicit executable path. No local runtime path/config shipped.",
+  "application_algorithms_or_registered_settings_changed": false,
+  "source_sharing_publication_permissions": "Managed by team leader as explicitly directed; no new declaration/licensing workflow or legal clearance assertion.",
+  "git_stage_commit_push_performed": false,
+  "limits": [
+    "Same Windows machine with a fresh checkout-local Python environment; not another physical computer.",
+    "Synthetic software evidence does not establish real recognition accuracy, Gold/PRE closure or formal evaluation.",
+    "Ordinary website review/calendar mutations stay default-deny; no privileged enrollment or real calendar.",
+    "No dependency vulnerability-database scan or legal certification claimed."
+  ]
+}

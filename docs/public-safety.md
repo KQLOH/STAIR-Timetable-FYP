@@ -1,20 +1,15 @@
-# Public safety and future source gates
+# Public source and research-data boundaries
 
-## Starter-level decision
+The FYP team leader has authorized full-source integration into the existing checkout and manages source-sharing/publication permissions. This document does not reopen declaration workflows, grant a new project license or claim third-party legal clearance. Commit and Push remain manual owner actions.
 
-The 18 unresolved source permissions do not block publication review of this independent documentation/tooling starter. They **do** continue to block the complete application. No held file, partial backend/frontend, third-party baseline implementation or historical report/screenshot is included.
+## Included application scope
 
-All starter prose, templates and utility/tests are newly prepared for this interim release, except the publicly reviewed development rules copied with LF normalization. No third-party code/images are vendored. No blanket project license or author/coauthor consent for withheld work is inferred or invented. Final publication remains the owner's action after review.
+The backend/frontend, development reconstruction/layout profiles, canonical contracts, registered baseline adapters, separate B2H-v1, review/calendar/analysis services, dependency manifests and independent synthetic tests are included. See [current results](installation-and-test-results.json), [setup](setup.md) and [integration review](github-integration-review.md). The original starter-only report is historical.
 
-## Never upload here
+## Excluded private material
 
-Personal timetable screenshots, student information, authenticated portal HTML/responses, passwords/tokens/cookies/OAuth secrets, private research/Gold/held-out records, original source archives, retained S4B fixtures/journals/logs, data/temp, environments, local OCR paths, old .git history or other-branch/recovery refs. Ignored does not mean disposable; preserve original evidence locally. Ignore rules are an aid, not a security guarantee.
+Personal timetable screenshots, student information, authenticated portal responses, passwords/tokens/cookies/OAuth secrets, protected research/Gold/held-out records, source archives, retained S4B journals/resources, original Git/history/recovery refs, virtual environments and personal OCR configuration are excluded from the source allowlist. Fresh local test outputs and the locally installed environment are ignored, never staged. Preserve original evidence; ignore rules are not deletion permission or a security guarantee.
 
-## Add source later
+The two historical S4B host/test modules are excluded explicitly. Portable synthetic tests preserve current security assertions without historical data or live enrollment. No private statements, credentials, real university connection or external calendar service are needed for tests.
 
-1. Establish genuine file-level author/coauthor/upstream permission and required notices/license/attribution.
-2. Review public contents and metadata; include every dependency needed by the proposed module.
-3. Verify imports, interfaces, meaningful tests and claimed runnable scope from a cleared copy.
-4. Submit a scoped PR. Do not change registered methods, fabricate source values/Gold/results, or silently discard essential files to get a green status.
-
-Public workflow proposals remain PROPOSED_NOT_APPROVED. Real Gold/audit work, independent reviewer assignments, freezes/seals/PRE gates, formal evaluation, live university access and any calendar authorization have separate requirements. No public branch grants those permissions.
+Independent research roles, Gold/audit/freeze/seal/PRE requirements and calendar authorization remain separate. Publication does not complete or bypass any of them. Do not present synthetic software test success as real recognition accuracy or formal research performance.

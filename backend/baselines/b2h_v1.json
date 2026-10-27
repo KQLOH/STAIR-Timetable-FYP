@@ -1,0 +1,11 @@
+{
+  "system_id": "B2H-v1",
+  "version": "m3.1.1",
+  "purpose": "Application compatibility variant; not registered B2",
+  "header_max_gap_pixels": 200,
+  "session_separators": [";", "|", "&", "newline"],
+  "shared_course_scope": "same explicit source cell or continuation link only",
+  "ambiguous_headers": "retain alternatives",
+  "no_graph_repair": true,
+  "no_selective_decision": true
+}

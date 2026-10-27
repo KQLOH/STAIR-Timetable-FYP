@@ -1,46 +1,51 @@
-# STAIR-Timetable FYP — Public Project Starter
+# STAIR-Timetable
 
-**Schema-and Temporal-Consistency-Aware Timetable for Safe Calendar Synchronisation.**
+Schema-and Temporal-Consistency-Aware Timetable for Safe Calendar Synchronisation.
+Software Engineering FYP, FastAPI backend and HTML/CSS/JavaScript website.
 
-This is an **interim collaboration starter** for the proposed PUBLIC repository `STAIR-Timetable-FYP`. It is independently useful for team planning, documentation and synthetic tooling tests. It does **not** include or run the full STAIR application. Starter verification/readiness is recorded in [the verification note](docs/starter-verification.md).
+This is the complete bounded V1.0 prototype source, integrated into the existing repository on `feature/complete-v1-handover` at the team leader's direction. It awaits final Commit/Push review; it is not yet on public main. All original starter document paths and the starter commit are preserved. `PUBLIC-STARTER-MANIFEST.json` describes that historical starter, not the current application. The team leader manages source-sharing/publication permissions; this integration makes no new license or research-result claim.
 
-**Starter status: READY_FOR_MANUAL_PUBLICATION_REVIEW.** Scope is the independently verified project starter only; full V1.0 source remains withheld.
+## Implemented application scope
 
-## What exists locally
+- Bounded PDF/PNG/JPG evidence extraction; separate native PDF and optional English Tesseract OCR routes, coordinates and provenance.
+- Registered B1/B2 adapters; separately versioned B2H-v1; P1 development reconstruction/constraints and matched B3 contracts.
+- Opt-in M5.2 layout, S2a ruled-grid and S2b colored-block development profiles.
+- Canonical event/evidence contracts, conservative TAR UMT structured-source adapter and mocked portal tests.
+- Responsive website, evidence inspection, protected human-review APIs, read-only calendar diagnostics, isolated TEST_ONLY services and grounded schedule analysis.
 
-The original local project implements FastAPI/Pydantic contracts, structured timetable parsing, PDF/image evidence and optional OCR, separate B1/B2/B2H-v1 paths, development reconstruction/constraints, review services, frontend navigation, read-only calendar diagnostics, isolated TEST_ONLY calendar safety and observed-event analysis. General real timetable recognition, live portal compatibility, history/persistence and research evaluation remain limited or unverified. [Scope and status](docs/scope-and-status.md).
+Ordinary website review/calendar mutations remain default-deny. No reviewer grants, credentials, private timetables, historical journals, Gold or held-out material are included. TAR UMT live authentication is optional external functionality; local demonstration/tests need no university account. Real recognition accuracy, full-schedule verification and formal research evaluation are not established by synthetic software tests. History/export/persistence and authorization limitations are documented in [status](docs/scope-and-status.md).
 
-## What this public starter includes
+## Run locally
 
-- Reviewed development instructions, collaboration rules, architecture/scope summaries and manual GitHub steps.
-- The requested two-person work split, research preparation roadmap and blank proposal templates.
-- A new offline Markdown file-link checker and independently synthetic standard-library tests.
-- An exact file/hash manifest, safe ignore rules and LF line-ending policy.
-
-There is no backend, frontend, application dependency bundle, OCR runtime, research dataset, Gold/held-out record, personal screenshot, authenticated response, retained journal or old Git history here. The 18 uncleared source files remain withheld. This starter does not clear them, replace their algorithms or grant access to the complete application.
-
-## Start collaborating
-
-1. Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), [team workflow](docs/team-workflow.md) and [public safety/source gates](docs/public-safety.md).
-2. Student A owns integration, backend/frontend, bounded real-timetable diagnosis and release coordination. Student B owns Gold Construction preparation, inventory templates, annotation-guide proposals, 29-page audit workflow preparation and approved synthetic test planning.
-3. Use `main`, `feature/real-timetable-recognition` and `research/r2-gold-preparation` with PR review before merging. Nothing private belongs in any branch.
-4. Complete only proposed templates/plans publicly; keep actual source/identity/permission/annotation evidence in authorized private storage. Neither implementer can invent Gold or bypass independent reviewers.
-
-## Runnable starter utilities
-
-Python 3.12 is the tested baseline. No pip dependencies, Node, Tesseract, credentials or original project files are required. From this starter root:
+Use Python 3.12, Node for frontend regression tests, and separately installed English Tesseract for live OCR. Follow [setup](docs/setup.md), [public test inventory](tools/public_test_inventory.json) and [architecture](docs/architecture.md). The backend runs on loopback port 8000; serve only `frontend/` on loopback port 5500. No npm packages or frontend build are needed.
 
 ```powershell
-python -B -S -m unittest discover -s tests -v
-python -B -S -m starter_tools.markdown_links --root .
+python -m venv .venv
+.\.venv\Scripts\python.exe -B -m pip install --only-binary=:all: -r requirements.txt -r requirements-ocr.txt -r requirements-test.txt -c requirements-team-lock.txt
+.\.venv\Scripts\python.exe -B -m pip check
+.\.venv\Scripts\python.exe -B tools/run_public_tests.py
 ```
 
-`-S` disables site-package loading; the included code uses only the standard library. This runs starter checks, **not** timetable extraction, an application server, Gold validation or the original application suite. [Setup and limitations](docs/setup.md).
+For live image/PDF OCR, select your own separately installed Tesseract executable in the backend terminal (English data required; no global PATH change):
 
-## Research and future source release
+```powershell
+$env:STAIR_TESSERACT_CMD = 'C:\Tools\Tesseract-OCR\tesseract.exe'
+& $env:STAIR_TESSERACT_CMD --version
+& $env:STAIR_TESSERACT_CMD --list-langs
+```
 
-Preserve RO1–RO4/RQ1–RQ4 and the approved three research references. Their contents are not bundled or reconstructed here. The 1,934 pre-annotation rows are provisional. Independent audit, reconciliation, Gold freeze/test seal and PRE gates remain prerequisites for formal evaluation. Software test success does not prove recognition accuracy or research outcomes.
+Start the backend in that terminal:
 
-Future application source must be added in explicit reviewed modules only after actual owner/coauthor/upstream rights, dependency completeness, privacy review and runnable checks. Do not copy the old repository or its other branch/history into this starter. The complete V1.0 remains unpublished and has a separate readiness decision.
+```powershell
+.\.venv\Scripts\python.exe -B -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
 
-After your final review, follow [exact manual PowerShell upload/invitation steps](docs/github-upload.md). The preparation agent has not initialized Git, created a repository, staged, committed, pushed or invited anyone. No project-wide license for withheld work is inferred or selected here.
+Start the frontend in a second terminal at the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m http.server 5500 --bind 127.0.0.1 --directory frontend
+```
+
+Open http://127.0.0.1:5500; API documentation is http://127.0.0.1:8000/docs. Stop each service with Ctrl+C. After the owner pushes this integration, teammates can clone `feature/complete-v1-handover` as described in [setup](docs/setup.md). No university account or private dataset is needed for synthetic development.
+
+See [publication gates](docs/publication-checklist.md) and [source clearance](docs/source-sharing-status.md). The 844 historical local tests are not a public checkout result. Actual integrated-checkout results are recorded in [installation and tests](docs/installation-and-test-results.json). RO1–RO4/RQ1–RQ4 and approved research gates remain unchanged; 1,934 pre-annotations are not independently verified Gold.

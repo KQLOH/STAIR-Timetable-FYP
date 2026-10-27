@@ -1,47 +1,84 @@
-# Public starter: ignore local material; this is never deletion permission.
-.venv/
-venv/
-env/
+# =========================
+# Python
+# =========================
 __pycache__/
 *.py[cod]
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# =========================
+# Secrets
+# =========================
 .env
 .env.*
 !.env.example
+config/ocr-runtime.local.json
 credentials.json
 token.json
 tokens.json
-cookies.json
 cookies.txt
+cookies.json
 client_secret*.json
 service-account*.json
 *.pem
 *.key
 *.p12
 *.pfx
-config/ocr-runtime.local.json
+
+# =========================
+# TAR UMT private/debug data
+# =========================
 data/temp/
 data/calendar_sandbox/
 data/development_samples/
-data/private/
-data/research/
-data/gold/
-data/heldout/
-data/annotations/
-data/predictions/
-private/
-local/
-sources/
-baseline/
+data/authenticated/
+data/samples/intranet_response.txt
+data/samples/intranet_sample.html
+data/samples/*response*.html
+data/samples/*response*.json
+
+# Live authenticated responses
 live_timetable_response.html
 view_session_response.html
+
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
 *.log
+
+# Local installers, native runtime binaries and recovery artifacts.
+# Ignoring is not deletion permission and does not remove tracked/history files.
 *.exe
 *.msi
+*.msix
 *.dll
+*.whl
+*.bak
+*.orig
+*.rej
+recovery-*.zip
+backup-*.zip
+
+# Public handover: never stage private research or private declarations.
+data/
+sources/
+private/
+local/
 *.zip

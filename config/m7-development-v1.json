@@ -1,0 +1,15 @@
+{
+  "profile_id": "m7-development-v1",
+  "research_status": "PROVISIONAL_APPLICATION_ONLY",
+  "recommendation_method": "deterministic-development-only-not-registered-P1A",
+  "slot_minutes": 60,
+  "grid_minutes": 15,
+  "buffer_minutes": 15,
+  "recommendation_cap": 100,
+  "occurrence_cap": 1000,
+  "ranking": "DISABLED",
+  "default_availability": null,
+  "default_timezone": null,
+  "long_block_threshold": "explicit request only",
+  "external_provider": "DISABLED"
+}

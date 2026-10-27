@@ -1,0 +1,22 @@
+{
+  "version": "portable-s4b-v1",
+  "purpose": "INDEPENDENT_SYNTHETIC_UNIT_TEST_INPUTS_NOT_RESEARCH_GOLD_OR_HISTORICAL_ACCEPTANCE",
+  "review": {
+    "event_count": 2,
+    "page_size": [1100, 300],
+    "lines": [
+      "FP701 Monday 2033-02-07 09:00-10:00 Lecture Room SYN-A Group Q1",
+      "FP702 Tuesday 2033-02-08 12:00-13:00 Tutorial Room SYN-B Group Q1"
+    ]
+  },
+  "calendar": {
+    "capture_id": "synthetic:portable-s4b-v1-calendar",
+    "events": [
+      {"course_code": "FP801", "session_type": "Lecture", "day_of_week": 1, "date": "2033-02-07", "start_time": "09:00", "end_time": "10:00", "source_timezone": "Etc/UTC", "location": "INVENTED ROOM A", "session_id": "synthetic-session:portable-1"},
+      {"course_code": "FP802", "session_type": "Tutorial", "day_of_week": 2, "date": "2033-02-08", "start_time": "12:00", "end_time": "13:00", "source_timezone": "Etc/UTC", "location": "INVENTED ROOM B", "session_id": "synthetic-session:portable-2"}
+    ],
+    "update": {"location": "INVENTED ROOM C"},
+    "failure": {"location": "INVENTED ROOM D"},
+    "blocked": {"source_timezone": null}
+  }
+}

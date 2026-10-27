@@ -1,0 +1,11 @@
+{
+  "profile_id": "ocr-layout-m52-v1",
+  "status": "PROVISIONAL_APPLICATION_ONLY",
+  "cross_line_max_gap_heights": 3.5,
+  "column_alignment_heights": 1.5,
+  "minimum_horizontal_overlap": 0.55,
+  "header_max_gap_heights": 16,
+  "max_evidence_spans": 256,
+  "max_layout_groups": 40,
+  "description": "Geometry-linked OCR association only. No implicit dates, time-axis AM/PM, recurrence, timezone, group membership or verification. Supervisor approval/freeze required before research use."
+}

@@ -1,0 +1,5 @@
+# HTTP integration tests; runtime application requirements remain in requirements.txt.
+httpx==0.28.1
+reportlab>=4,<5
+# Direct import in the isolated S4B test transport; compatible with local FastAPI.
+starlette==1.8.0

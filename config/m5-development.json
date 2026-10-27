@@ -1,0 +1,11 @@
+{
+  "profile_id": "m5-development-v1",
+  "version": "1.0",
+  "status": "PROVISIONAL_APPLICATION_ONLY",
+  "accept_enabled": false,
+  "registered_routing_enabled": false,
+  "allow_bounded_application_review": true,
+  "review_max_fields": 2,
+  "authority": "Research Report physical pages 121-122, equations 4.5-4.8; Supervision Answers paragraph 85; Review pages 14-15",
+  "note": "Application repair routing only. No registered threshold, calibration, gold promotion or calendar permission."
+}

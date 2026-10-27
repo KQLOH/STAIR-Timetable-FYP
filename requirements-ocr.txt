@@ -1,0 +1,6 @@
+# Optional M3.1 wrapper. The separately installed system Tesseract is required.
+pytesseract==0.3.13
+# Optional PDF/image and layout support. NumPy matches the verified local runtime.
+pdfplumber>=0.11,<0.12
+Pillow>=10,<13
+numpy==2.3.5

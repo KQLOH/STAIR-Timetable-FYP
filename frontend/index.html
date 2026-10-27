@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10263f">
+  <title>STAIR Timetable</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-grid" viewBox="0 0 24 24">
+      <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
+    </symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24">
+      <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" />
+    </symbol>
+    <symbol id="i-review" viewBox="0 0 24 24">
+      <path d="M5 4h14v16H5zM8 8h8M8 12h5M8 16h4" />
+    </symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24">
+      <path d="M5 5h14v15H5zM8 3v4M16 3v4M5 9h14M9 13h2v2H9z" />
+    </symbol>
+    <symbol id="i-history" viewBox="0 0 24 24">
+      <path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6M4 4v4.6h4.6M12 8v5l3 2" />
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <path d="m5 12 4 4L19 6" />
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 24 24">
+      <path d="m6 6 12 12M18 6 6 18" />
+    </symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24">
+      <path d="m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20ZM13.5 7l3.5 3.5" />
+    </symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24">
+      <path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24">
+      <path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14" />
+    </symbol>
+    <symbol id="i-file" viewBox="0 0 24 24">
+      <path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6" />
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24">
+      <path d="M12 3 5 6v5c0 4.7 2.8 8.1 7 10 4.2-1.9 7-5.3 7-10V6l-7-3Zm-3 9 2 2 4-5" />
+    </symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24">
+      <path d="m9 6 6 6-6 6" />
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m15.5 15.5 4 4" />
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24">
+      <path
+        d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3ZM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z" />
+    </symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </symbol>
+  </svg>
+
+  <div class="app-shell">
+    <div class="navigation-backdrop" id="navigationBackdrop" aria-hidden="true"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Site navigation" tabindex="-1">
+      <button class="icon-button mobile-sidebar-close" id="closeMobileMenu" aria-label="Close navigation" type="button"><svg aria-hidden="true"><use href="#i-close" /></svg></button>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>STAIR</strong><small>Timetable</small></div>
+      </div>
+
+      <nav class="main-nav" aria-label="Primary navigation">
+        <button class="nav-item active" data-view="workspace" aria-current="page"><svg>
+            <use href="#i-grid" />
+          </svg><span>Workspace</span></button>
+        <button class="nav-item" data-view="upload"><svg>
+            <use href="#i-upload" />
+          </svg><span>New extraction</span></button>
+        <button class="nav-item" data-view="review"><svg>
+            <use href="#i-review" />
+          </svg><span>Review events</span><b id="reviewNavCount">0</b></button>
+        <button class="nav-item" data-view="calendar"><svg>
+            <use href="#i-calendar" />
+          </svg><span>Calendar</span></button>
+        <button class="nav-item" data-view="analysis"><svg><use href="#i-spark" /></svg><span>Schedule Analysis</span></button>
+        <button class="nav-item" data-view="history"><svg>
+            <use href="#i-history" />
+          </svg><span>History</span></button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status"><i></i><span><strong>Development prototype</strong><small>Calendar writes blocked</small></span></div>
+        <button class="text-button" id="openSettings" aria-haspopup="dialog" aria-controls="settingsDrawer">Extraction settings</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="mobileMenu" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"><svg>
+            <use href="#i-menu" />
+          </svg></button>
+        <div class="page-heading">
+          <p>Academic schedule assistant</p>
+          <h1 id="pageTitle" tabindex="-1">Workspace</h1>
+        </div>
+        <div class="top-actions">
+          <span class="safe-pill"><svg>
+              <use href="#i-shield" />
+            </svg>Calendar NOT AUTHORIZED</span>
+          <button class="button secondary" id="loadSampleTop">Try sample</button>
+          <button class="button primary" id="newExtractionTop"><svg>
+              <use href="#i-upload" />
+            </svg>New extraction</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-workspace" aria-labelledby="pageTitle">
+        <div class="welcome-row">
+          <div>
+            <p class="eyebrow">Structured timetable extraction</p>
+            <h2>Inspect timetable event candidates.</h2>
+            <p>Upload PNG, JPG or PDF. This development display does not establish M5 acceptance or calendar approval.</p>
+          </div>
+          <button class="button primary large" id="workspaceUpload"><svg>
+              <use href="#i-upload" />
+            </svg>Upload timetable</button>
+        </div>
+
+        <div class="metric-strip" aria-label="Workspace summary">
+          <div><span>Detected events</span><strong id="metricDetected">—</strong><small>from current file</small></div>
+          <div><span>Complete candidates</span><strong id="metricReady">—</strong><small>Field presence only; not eligible</small></div>
+          <div><span>Incomplete candidates</span><strong id="metricReview">—</strong><small>Not a calibrated policy count</small></div>
+          <div><span>Calibrated confidence</span><strong id="metricConfidence">—</strong><small>Unavailable; OCR scores are separate</small>
+          </div>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="panel activity-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Current run</p>
+                <h3>Extraction progress</h3>
+              </div><span class="status-label neutral" id="runStatus">Waiting for file</span>
+            </div>
+            <ol class="pipeline" id="pipeline">
+              <li data-step="ingest"><span>1</span>
+                <div><strong>Ingest document</strong><small>PDF, PNG or JPG</small></div><i></i>
+              </li>
+              <li data-step="extract"><span>2</span>
+                <div><strong>Read text & layout</strong><small>OCR and spatial cues</small></div><i></i>
+              </li>
+              <li data-step="decode"><span>3</span>
+                <div><strong>Reconstruct events</strong><small>Candidate graph + constraints</small></div><i></i>
+              </li>
+              <li data-step="review"><span>4</span>
+                <div><strong>Inspect policy</strong><small>Development REVIEW / ABSTAIN; ACCEPT disabled</small></div><i></i>
+              </li>
+            </ol>
+          </section>
+
+          <section class="panel quick-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Quick start</p>
+                <h3>Choose your source</h3>
+              </div>
+            </div>
+            <button class="source-option" data-action="choose-file">
+              <span class="source-icon pdf">PDF</span>
+
+              <div>
+                <strong>Upload timetable file</strong>
+                <small>PDF, PNG and JPG/JPEG · max 20 MiB</small>
+              </div>
+
+              <svg>
+                <use href="#i-chevron" />
+              </svg>
+            </button>
+
+
+            <button class="source-option" id="connectIntranet">
+              <span class="source-icon intranet">
+                TAR
+              </span>
+
+              <div>
+                <strong>Connect TAR UMT Intranet</strong>
+                <small>Fetch your latest timetable</small>
+              </div>
+
+              <svg>
+                <use href="#i-chevron" />
+              </svg>
+            </button>
+
+
+            <button class="source-option" id="quickSample">
+              <span class="source-icon sample">
+                <svg>
+                  <use href="#i-spark" />
+                </svg>
+              </span>
+
+              <div>
+                <strong>Explore with sample data</strong>
+                <small>See the review workflow instantly</small>
+              </div>
+
+              <svg>
+                <use href="#i-chevron" />
+              </svg>
+            </button>
+            <div class="privacy-note"><svg>
+                <use href="#i-shield" />
+              </svg>
+              <p><strong>Local by design.</strong> Uploads stay in this local experiment workspace. Calendar writes go
+                only to the sandbox.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-analysis">
+        <div class="section-intro"><div><p class="eyebrow">M7 · DEVELOPMENT</p><h2>Schedule Analysis</h2>
+          <p>Observed canonical candidates only. Empty intervals do not establish availability.</p></div></div>
+        <div class="analysis-controls">
+          <label>Start date <input type="date" id="analysisStart" required></label>
+          <label>End date <input type="date" id="analysisEnd" required></label>
+          <label>Analysis IANA timezone <input id="analysisZone" placeholder="Explicit timezone" required></label>
+          <label>Declared timetable scope <input id="analysisScope" placeholder="Timetable identifier" required></label>
+          <label>Cohort (if evidenced) <input id="analysisCohort" placeholder="Optional cohort identifier"></label>
+          <button class="button primary" id="analyzeSchedule" type="button">Analyze observed events</button>
+        </div>
+        <div id="analysisResult" class="analysis-result" aria-live="polite">NOT ASSESSED — select a canonical source and explicit scope.</div>
+      </section>
+
+      <section class="view" id="view-upload">
+        <div class="section-intro">
+          <p class="eyebrow">Step 1 of 3</p>
+          <h2>Add your timetable</h2>
+          <p>Upload PNG, JPG or PDF to the local backend. OCR and reconstruction may remain incomplete.
+          </p>
+        </div>
+        <div class="upload-layout">
+          <section class="upload-zone" id="dropZone" tabindex="0" role="button" aria-label="Upload timetable">
+            <div class="upload-illustration"><svg>
+                <use href="#i-upload" />
+              </svg></div>
+            <h3>Drop your timetable here</h3>
+            <p>or choose a file from your computer</p>
+            <button class="button primary" id="browseButton">Choose file</button>
+            <small>PDF, PNG, JPG/JPEG · max 20 MiB</small>
+          </section>
+          <aside class="upload-tips">
+            <label for="extractionPipeline">Extraction pipeline</label>
+            <select id="extractionPipeline">
+              <option value="evidence">evidence — evidence only</option>
+              <option value="B1">B1 — registered OCR + regex</option>
+              <option value="B2">B2 — registered template-aware</option>
+              <option value="B2H-v1">B2H-v1 — separate hardening variant</option>
+            </select>
+            <p>Evidence mode produces no baseline events. PDF evidence may use native text; B1/B2/B2H-v1 use OCR. B1/B2 can return zero candidates; B2H-v1 can return partial candidates. OCR is not a complete timetable.</p>
+            <label><input id="runP1" type="checkbox" checked> Run constrained P1 development reconstruction</label>
+            <label><input id="runLayoutAssociation" type="checkbox" checked> OCR layout association — ocr-layout-m52-v1 (provisional)</label>
+            <label><input id="runRuledGridS2a" type="checkbox"> Opt in: word OCR + ruled grid — ocr-ruled-grid-s2a-v1 (application only; evidence pipeline)</label>
+            <label><input id="runBlockGridS2b" type="checkbox"> Opt in: colored blocks + two-row clock axis — ocr-block-grid-s2b-v1 (synthetic development; evidence pipeline)</label>
+            <p>Uncheck to retain the original m4-development-v1 comparison path. Layout links and partial fields do not grant verification or calendar approval.</p>
+            <p class="eyebrow">For better results</p>
+            <h3>A clean source helps</h3>
+            <ul>
+              <li><svg>
+                  <use href="#i-check" />
+                </svg><span><strong>Use the full timetable</strong><small>Keep day and time headers
+                    visible.</small></span></li>
+              <li><svg>
+                  <use href="#i-check" />
+                </svg><span><strong>Avoid heavy compression</strong><small>Text should remain sharp and
+                    readable.</small></span></li>
+              <li><svg>
+                  <use href="#i-check" />
+                </svg><span><strong>Review source evidence</strong><small>M5 ACCEPT is disabled. Calendar writes remain blocked.</small></span></li>
+            </ul>
+            <button class="text-button" id="loadSampleUpload">No file? Try the sample timetable</button>
+            <br><br>
+
+            <button class="button secondary full" id="connectIntranetUpload" type="button">
+              Connect TAR UMT Intranet
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="view-review">
+        <div class="review-toolbar">
+          <div>
+            <p class="eyebrow">Step 2 of 3</p>
+            <h2>Review extracted events</h2>
+            <p id="reviewSubtitle">Upload a timetable to begin.</p>
+          </div>
+          <div class="review-actions"><button class="button secondary" id="exportJson"><svg>
+                <use href="#i-download" />
+              </svg>Export JSON</button><button class="button primary" id="reviewToCalendar">Continue to calendar<svg>
+                <use href="#i-chevron" />
+              </svg></button></div>
+        </div>
+
+        <section class="panel review-workflow" aria-labelledby="reviewWorkflowTitle">
+          <h3 id="reviewWorkflowTitle">Application review</h3>
+          <p id="reviewAuthorization" role="status">Public read-only mode. No trusted operator is enrolled. Application correction is separate from research Gold and calendar approval.</p>
+          <div class="review-workflow-actions">
+            <label>Current source candidate<select id="reviewPublicCandidate" aria-label="Current source candidate"></select></label>
+            <button class="button secondary" id="inspectCanonical" type="button" disabled>Inspect canonical details</button>
+            <button class="button secondary" id="loadReviewQueue" type="button">Open authorized queue</button>
+            <button class="button secondary" id="ingestReviewSource" type="button" disabled>Queue current source</button>
+            <button class="text-button" id="endReviewSession" type="button" disabled>End authorized review session</button>
+          </div>
+          <p id="reviewWorkflowStatus" role="status" aria-live="polite"></p>
+          <div id="reviewQueue" aria-label="Authorized review queue"></div>
+          <button class="text-button" id="moreReviewTasks" type="button" hidden>Next queue page</button>
+        </section>
+        <div class="review-layout empty-state-layout" id="reviewLayout">
+          <section class="document-pane">
+            <div class="pane-heading">
+              <div><span class="file-badge"><svg>
+                    <use href="#i-file" />
+                  </svg></span><span><strong id="documentName">No document selected</strong><small
+                    id="documentMeta">—</small></span></div><button class="text-button"
+                id="replaceFile">Replace</button>
+            </div>
+            <div class="integration-controls">
+              <button class="text-button" id="cancelUpload" type="button" disabled>Cancel processing</button>
+              <button class="text-button" id="retryUpload" type="button" disabled>Retry current file</button>
+              <button class="text-button" id="refreshIntranet" type="button" disabled>Refresh Intranet</button>
+              <button class="text-button" id="disconnectIntranet" type="button" disabled>Disconnect Intranet</button>
+            </div>
+            <p id="processingStatus" role="status" aria-live="polite"></p>
+            <progress id="uploadProgress" aria-label="Processing upload (indeterminate)" hidden></progress>
+            <div class="document-preview" id="documentPreview">
+              <div class="empty-illustration"><svg>
+                  <use href="#i-file" />
+                </svg>
+                <h3>Your source preview appears here</h3>
+                <p>Upload a timetable or load the sample.</p>
+              </div>
+            </div>
+            <section id="extractionEvidence" class="evidence-panel" aria-label="Source evidence and pipeline diagnostics"></section>
+          </section>
+
+          <section class="events-pane">
+            <div class="filter-row">
+              <div class="segmented" id="eventFilters"><button class="active" data-filter="all">All <span
+                    id="filterAll">0</span></button><button data-filter="accepted">Complete candidates <span
+                    id="filterReady">0</span></button><button data-filter="review">Incomplete / review <span
+                    id="filterReview">0</span></button></div>
+              <label class="search-box"><svg>
+                  <use href="#i-search" />
+                </svg><input id="eventSearch" type="search" placeholder="Search events"></label>
+            </div>
+            <div class="bulk-row"><label><input type="checkbox" id="selectAll"><span>Select all visible</span></label>
+              <div><button class="text-button positive" id="approveSelected">Mark demo reviewed</button><button
+                  class="text-button danger" id="deleteSelected">Delete</button></div>
+            </div>
+            <p id="reviewBoundary">Read-only candidate inspection. Trusted-host corrections unavailable; M5 ACCEPT disabled.</p>
+            <div class="event-list" id="eventList">
+              <div class="empty-list">
+                <p>No extracted events yet.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-calendar">
+        <div class="section-intro calendar-intro">
+          <div>
+            <p class="eyebrow">Step 3 of 3</p>
+            <h2>Demo calendar display — NOT AUTHORIZED</h2>
+            <p>Legacy READY and Approve labels are display-only. The separate TEST_ONLY workflow requires an approved host. External calendar synchronization remains unavailable.</p>
+          </div><span class="sandbox-badge"><svg>
+              <use href="#i-shield" />
+            </svg>Demo / not authorized</span>
+        </div>
+        <section class="panel sandbox-workflow" aria-labelledby="sandboxWorkflowTitle" id="sandboxWorkflow">
+          <p class="eyebrow">TEST_ONLY · local synthetic calendar</p>
+          <h3 id="sandboxWorkflowTitle">Calendar sandbox workflow</h3>
+          <p>Separate from uploaded timetables. Only an approved host can supply an operator and synthetic sources. Google Calendar is not connected.</p>
+          <p id="sandboxAuthorization" role="status">Public mode — no TEST_ONLY operator enrolled.</p>
+          <div class="review-workflow-actions">
+            <button class="button secondary" id="connectSandboxHost" type="button">Open approved TEST_ONLY session</button>
+            <button class="button secondary" id="endSandboxSession" type="button" disabled>End sandbox session</button>
+          </div>
+          <label>Synthetic timetable<select id="sandboxFixture" disabled><option value="">Approved host required</option></select></label>
+          <button class="button secondary" id="previewSandbox" type="button" disabled>Assess and preview exact local diff</button>
+          <div id="sandboxSource" aria-label="Registered synthetic timetable"></div>
+          <div id="sandboxPreview" aria-label="Exact local calendar preview"></div>
+          <label class="sandbox-confirmation"><input id="sandboxOwnerConfirmation" type="checkbox" disabled> I am the authorized demo owner and approve the displayed target, source revisions and ordered local operations. This approval is TEST_ONLY.</label>
+          <div class="review-workflow-actions">
+            <button class="button secondary" id="approveSandbox" type="button" disabled>Approve this exact preview</button>
+            <button class="button primary" id="executeSandbox" type="button" disabled>Execute approved local operations</button>
+            <button class="button secondary" id="revokeSandboxApproval" type="button" disabled>Revoke selected approval</button>
+          </div>
+          <label>Approved host failure simulation<select id="sandboxFailure" disabled>
+            <option value="NONE">Normal local execution</option><option value="TIMEOUT_BEFORE">Timeout before application</option><option value="TIMEOUT_AFTER">Timeout after application</option>
+            <option value="FAIL_BEFORE">Confirmed failure before application</option><option value="PARTIAL_FAILURE">Partial batch failure</option><option value="CRASH_AFTER_SUBMIT">Interrupted after durable submission</option>
+            <option value="TIMEOUT_AFTER_MISMATCH">Timeout with observed mismatch</option>
+          </select></label>
+          <p id="sandboxWorkflowStatus" role="status" aria-live="polite">No preview, approval or execution has occurred.</p>
+          <div id="sandboxExecution" aria-label="Local execution and recovery results"></div>
+          <div class="review-workflow-actions"><button class="button secondary" id="refreshSandboxHistory" type="button" disabled>Refresh local state and journal</button></div>
+          <label>Owned recorded approval for recovery<select id="sandboxRecoveryApproval" disabled><option value="">No authorized history loaded</option></select></label>
+          <div class="review-workflow-actions">
+            <button class="button secondary" id="reconcileSandbox" type="button" disabled>Reconcile selected attempt</button>
+            <button class="button secondary" id="replaySandbox" type="button" disabled>Check same approved attempt (idempotent replay)</button>
+          </div>
+          <div id="sandboxHistory" aria-label="Persistent TEST_ONLY calendar journal"></div>
+        </section>
+        <div class="calendar-layout">
+          <section class="calendar-board">
+            <div class="week-heading"><button class="icon-button" id="previousWeek" disabled aria-describedby="calendarScopeNote"
+                aria-label="Previous week">‹</button>
+              <div><strong>Dated candidate display — completeness unverified</strong><small id="calendarRange" role="status" tabindex="-1">No dated source scope loaded</small></div>
+              <button class="icon-button" id="nextWeek" aria-label="Next week" disabled aria-describedby="calendarScopeNote">›</button>
+            </div>
+            <p id="calendarScopeNote" class="calendar-scope-note">Week navigation is limited to dates in the loaded source. No recurring classes are inferred.</p>
+            <p id="calendarUndated" class="calendar-scope-note"></p>
+            <div class="week-grid" id="weekGrid" role="region" aria-label="Dated candidate week; scroll horizontally to inspect all days" tabindex="0"></div>
+          </section>
+          <aside class="sync-panel">
+            <p class="eyebrow">Pre-commit check</p>
+            <h3>Backend authorization unavailable</h3>
+            <div class="sync-count"><strong id="syncReadyCount">0</strong><span>authorized writes (blocked)</span></div>
+            <dl>
+              <div>
+                <dt>Malformed events</dt>
+                <dd id="syncMalformed">0</dd>
+              </div>
+              <div>
+                <dt>Duplicates</dt>
+                <dd id="syncDuplicates">0</dd>
+              </div>
+              <div>
+                <dt>Sync behaviour</dt>
+                <dd>Not connected</dd>
+              </div>
+            </dl>
+            <button class="button primary full" id="syncButton" disabled><svg>
+                <use href="#i-calendar" />
+              </svg>Writes blocked</button>
+            <button class="button secondary full" id="downloadIcs" disabled><svg>
+                <use href="#i-download" />
+              </svg>Download .ics</button>
+            <p class="sync-footnote"><svg>
+                <use href="#i-shield" />
+              </svg>No personal Google Calendar credentials are used.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="view-history">
+        <div class="section-intro">
+          <p class="eyebrow">Local activity</p>
+          <h2>Demo extraction history</h2>
+              <p>This placeholder does not persist extraction history or expose the M6 operation journal.</p>
+          <button class="button secondary" id="openCalendarJournal" type="button">Open protected TEST_ONLY calendar journal</button>
+        </div>
+        <section class="history-table panel">
+          <div class="history-head">
+            <span>Source</span><span>Result</span><span>Confidence</span><span>Time</span><span></span>
+          </div>
+          <div id="historyRows">
+            <div class="empty-history">No demo extraction history yet. This is not the M6 operation journal.</div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <input id="fileInput" type="file" hidden
+    accept=".pdf,.png,.jpg,.jpeg">
+
+  <div class="loading-overlay" id="loadingOverlay" aria-live="polite" aria-hidden="true">
+    <div class="loader-card">
+      <div class="scan-loader"><span></span></div>
+      <p class="eyebrow">STAIR is working</p>
+      <h2 id="loadingTitle">Reading your timetable</h2>
+      <p id="loadingText">Extracting text and reconstructing event relationships…</p>
+      <div class="loading-track"><i id="loadingProgress"></i></div>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="editDrawer" aria-hidden="true">
+    <div class="drawer-heading">
+      <div>
+        <p class="eyebrow">Event details</p>
+        <h2>Edit event</h2>
+      </div><button class="icon-button" id="closeDrawer" aria-label="Close"><svg>
+          <use href="#i-close" />
+        </svg></button>
+    </div>
+    <form id="eventForm">
+      <input type="hidden" id="editEventId">
+      <label><span>Subject</span><input id="editSubject" required></label>
+      <div class="form-grid"><label><span>Day</span><select id="editDay">
+            <option>monday</option>
+            <option>tuesday</option>
+            <option>wednesday</option>
+            <option>thursday</option>
+            <option>friday</option>
+            <option>saturday</option>
+            <option>sunday</option>
+          </select></label><label><span>Date (optional)</span><input id="editDate" placeholder="YYYY-MM-DD"></label>
+      </div>
+      <div class="form-grid"><label><span>Start time</span><input id="editStart" type="time"
+            required></label><label><span>End time</span><input id="editEnd" type="time" required></label></div>
+      <div class="form-grid"><label><span>Venue</span><input id="editVenue"></label><label><span>Class type</span><input
+            id="editType"></label></div>
+      <div class="drawer-actions"><button type="button" class="button secondary" id="cancelEdit">Cancel</button><button
+          class="button primary" type="button" disabled title="Authorized corrections are not connected to this website.">Save changes</button></div>
+    </form>
+  </aside>
+
+  <aside class="drawer settings-drawer" id="settingsDrawer" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-describedby="settingsDescription" tabindex="-1">
+    <div class="drawer-heading">
+      <div>
+        <p class="eyebrow">P1 configuration</p>
+        <h2 id="settingsTitle">Extraction settings</h2>
+      </div><button class="icon-button" id="closeSettings" aria-label="Close settings"><svg>
+          <use href="#i-close" />
+        </svg></button>
+    </div>
+    <div class="settings-content">
+      <p id="settingsDescription">Read-only configuration information. Registered algorithm settings cannot be changed here.</p>
+      <label class="range-label"><span><strong>Registered acceptance threshold unavailable</strong><b id="thresholdValue">Not configured</b></span><input
+          id="thresholdRange" type="range" min="40" max="95" value="70" disabled><small>Inactive legacy control. M5 ACCEPT is disabled; no threshold is registered here.</small></label>
+      <div class="setting-note"><svg>
+          <use href="#i-shield" />
+        </svg>
+        <p><strong>Calendar writes remain BLOCKED.</strong> Source validity, review, eligibility and exact approval are separate requirements.</p>
+      </div>
+      <button class="button primary full" id="saveSettings" disabled>Settings unavailable</button>
+    </div>
+  </aside>
+  <div class="drawer-backdrop" id="reviewBackdrop" aria-hidden="true"></div>
+  <aside class="drawer review-drawer" id="reviewDrawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reviewDetailsTitle" tabindex="-1">
+    <div class="drawer-heading"><div><p class="eyebrow">Application record · not Gold</p><h2 id="reviewDetailsTitle">Candidate details</h2></div><button class="icon-button" id="closeReviewDetails" type="button" aria-label="Close candidate details"><svg aria-hidden="true"><use href="#i-close" /></svg></button></div>
+    <p id="reviewTaskStatus" role="status" aria-live="polite"></p>
+    <div id="reviewEventDetails"></div>
+    <div class="review-workflow-actions" id="reviewTaskActions">
+      <button class="button secondary" id="claimReviewTask" type="button" disabled>Assign to me</button>
+      <button class="button secondary" id="startReviewTask" type="button" disabled>Start / resume assigned review</button>
+      <button class="button secondary" id="reloadReviewTask" type="button" disabled>Refresh task</button>
+      <button class="button secondary" id="revalidateReviewTask" type="button" disabled>Revalidate current revision</button>
+      <button class="button secondary" id="loadReviewHistory" type="button" disabled>Review history</button>
+    </div>
+    <form id="reviewCorrectionForm">
+      <fieldset id="reviewCorrectionControls" disabled>
+        <legend>Source-supported corrections</legend>
+        <p>Changes create an application revision. They do not verify Gold, enable ACCEPT, approve a calendar, or establish schedule completeness.</p>
+        <label>Field<select id="reviewField"></select></label>
+        <label>Field state<select id="reviewFieldState"><option>PRESENT</option><option>MISSING</option><option>SOURCE_ABSENT</option><option>UNRESOLVED</option><option>CONFLICTING</option><option>NOT_APPLICABLE</option></select></label>
+        <label>Raw source reading<textarea id="reviewRawValue" maxlength="10000" rows="2"></textarea></label>
+        <label id="reviewNormalizedLabel">Normalized value<input id="reviewNormalizedValue" maxlength="10000"></label>
+        <small id="reviewValueHint">Use the value supported by the selected source evidence.</small>
+        <label>Find source evidence<input id="reviewEvidenceFilter" type="search" placeholder="Search source text or page reference"></label>
+        <label>Evidence references (select up to 20)<select id="reviewEvidenceRefs" multiple size="7"></select></label>
+        <p id="reviewEvidenceCount"></p>
+        <label>Justification / source-reading note<textarea id="reviewJustification" rows="2" maxlength="2000"></textarea></label>
+        <label><input id="reviewHumanAssertion" type="checkbox"> I read this value in the original source. Record an explicit human assertion linked to the selected original evidence; it is not original OCR or Gold.</label>
+        <details><summary>Conflicting alternatives retained by the correction contract</summary><label>Alternatives as JSON<textarea id="reviewAlternatives" rows="3" maxlength="20000" placeholder="[]"></textarea></label><small>Use existing source-linked raw alternatives and evidence IDs. Conflicting state requires at least two distinct alternatives.</small></details>
+        <button class="button secondary" id="addReviewChange" type="button">Add / replace field change</button>
+        <div id="reviewPendingChanges" aria-label="Pending field changes"></div>
+        <label>Reason for this correction batch<textarea id="reviewCorrectionReason" required maxlength="2000" rows="2"></textarea></label>
+        <button class="button primary" id="submitReviewChanges" type="submit">Submit source-supported correction</button>
+      </fieldset>
+    </form>
+    <div id="reviewValidationFeedback" role="status" aria-live="polite"></div>
+    <label>Reason for resolving, escalating or closing this application task<textarea id="reviewDispositionReason" maxlength="2000" rows="2" disabled></textarea></label>
+    <div class="review-workflow-actions">
+      <button class="button secondary" id="resolveReviewTask" type="button" disabled>Resolve application review</button>
+      <button class="button secondary" id="escalateReviewTask" type="button" disabled>Escalate</button>
+      <button class="button secondary" id="closeReviewTask" type="button" disabled>Close as abstained</button>
+    </div>
+    <section id="reviewDiagnostics" aria-label="Current revision read-only diagnostics"></section>
+    <section id="reviewHistory" aria-label="Authorized correction and audit history"></section>
+  </aside>
+  <div class="intranet-modal-backdrop" id="intranetModalBackdrop"></div>
+
+  <div class="intranet-modal" id="intranetModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="intranetTitle" tabindex="-1">
+
+    <div class="intranet-modal-card">
+
+      <div class="intranet-modal-heading">
+
+        <div>
+          <p class="eyebrow">TAR UMT Student Intranet</p>
+          <h2 id="intranetTitle">Connect your timetable</h2>
+          <p>
+            Sign in using your TAR UMT Student Intranet account.
+            Your password is used only to establish the current
+            authenticated session.
+          </p>
+        </div>
+
+        <button class="icon-button" id="closeIntranetModal" type="button" aria-label="Close">
+          <svg>
+            <use href="#i-close"></use>
+          </svg>
+        </button>
+
+      </div>
+
+
+      <form id="intranetLoginForm">
+
+        <label>
+          <span>Student ID</span>
+
+          <input id="intranetStudentId" type="text" autocomplete="username" required
+            placeholder="Enter your Student ID">
+        </label>
+
+
+        <label>
+          <span>Password</span>
+
+          <input id="intranetPassword" type="password" autocomplete="current-password" required
+            placeholder="Enter your password">
+        </label>
+
+
+        <div class="intranet-security-note">
+
+          <svg>
+            <use href="#i-shield"></use>
+          </svg>
+
+          <p>
+            <strong>Session-based connection.</strong>
+            STAIR does not save your TAR UMT password
+            in the browser or project files.
+          </p>
+
+        </div>
+
+
+        <div class="intranet-login-error" id="intranetLoginError"></div>
+
+
+        <div class="intranet-modal-actions">
+
+          <button class="button secondary" id="cancelIntranetLogin" type="button">
+            Cancel
+          </button>
+
+          <button class="button primary" id="intranetLoginButton" type="submit">
+            Connect Intranet
+          </button>
+
+        </div>
+
+      </form>
+
+    </div>
+
+  </div>
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+  <script src="./js/upload.js" defer></script>
+  <script src="./js/intranet.js" defer></script>
+  <script src="./js/analysis.js" defer></script>
+  <script src="./js/controls.js" defer></script>
+  <script src="./js/review.js" defer></script>
+  <script src="./js/sandbox.js" defer></script>
+  <script src="./js/app.js" defer></script>
+</body>
+
+</html>

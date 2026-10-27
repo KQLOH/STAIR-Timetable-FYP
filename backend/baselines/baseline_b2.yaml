@@ -1,0 +1,42 @@
+system_id: B2
+config_version: 2.0.0
+row_cluster_y_thresh: 12.0
+column_alignment_threshold: 20.0
+header_inheritance_limit: 15
+session_separators:
+- ;
+- '|'
+- /
+- '&'
+- '
+
+  '
+parser_states:
+- WAITING_FOR_DAY_OR_DATE
+- WAITING_FOR_SUBJECT
+- COLLECTING_EVENT_FIELDS
+- EMIT_EVENT
+- RESET_ROW_OR_SECTION
+rule_catalogue:
+  B2-R001: 2D Bounding-Box Row Clustering
+  B2-R002: Column-Band Spatial Alignment
+  B2-R003: Multi-Session Delimiter Splitting
+  B2-R004: Bounded Header Spatial Inheritance
+  B2-R005: Venue / Class-Type Boundary Separation
+  B2-R006: State Machine Event Emission
+  B2-R007: Missing Field Default / Explicit Unset
+rule_priority:
+- B2-R001
+- B2-R002
+- B2-R003
+- B2-R004
+- B2-R005
+- B2-R006
+- B2-R007
+no_graph_repair: true
+no_selective_decision: true
+timezone: Asia/Kuala_Lumpur
+normalizer_version: 2.0.0
+created_at: '2026-08-27T00:00:00Z'
+frozen_at: '2026-08-27T00:00:00Z'
+config_hash: acacad56a64b547c8bf1b39f8ac48572e854cf8fe88c44e3ff2c2e20012df8ba
