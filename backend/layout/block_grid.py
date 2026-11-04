@@ -23,7 +23,7 @@ from backend.layout.service import relations
 from backend.layout.block_models import PROFILE, BlockEvidence, MAX_OPERATIONS
 from backend.layout.block_capture import DETECTION_CONFIG
 
-CONFIG={'profile_id':PROFILE,'version':'s2b.1','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
+CONFIG={'profile_id':PROFILE,'version':'s2b.rt2.1','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
     'family':'axis-aligned-colored-blocks-day-date-rows-two-clock-rows',
     'detection':DETECTION_CONFIG,'max_groups':40,'max_operations':MAX_OPERATIONS,
     'temporal_authority':'own explicit AM/PM range, explicit header AM/PM, or printed 24-hour statement',
@@ -112,9 +112,24 @@ def header_axis(page):
         b=options[0];used.add(b.evidence_id)
         lefts=[x for x in edges if x<=min(a.bbox.x0,b.bbox.x0) and min(a.bbox.x0,b.bbox.x0)-x<=tolerance]
         left=max(lefts) if lefts else None
+        if page.header_vertical_rules:
+            center=(min(a.bbox.x0,b.bbox.x0)+max(a.bbox.x1,b.bbox.x1))/2
+            before=[x for x in page.header_vertical_rules if x<center]
+            after=[x for x in page.header_vertical_rules if x>center]
+            lo=max(before) if before else None
+            hi=min(after) if after else float(page.width-1)
+            # A label must be near the cell center; do not snap arbitrary text.
+            if lo is not None and abs(center-(lo+hi)/2)<=max(tolerance,(hi-lo)*.15):left=lo
         columns.append({'upper':a,'lower':b,'left':left,'right':None})
     for a,b in zip(columns,columns[1:]):a['right']=b['left']
-    # The terminal interval is not extended beyond an unobserved outer boundary.
+    # Close the terminal column only with a measured rule or a colored block
+    # ending at the captured page edge, never extrapolate uniform cell widths.
+    if columns and page.header_vertical_rules:
+        last=columns[-1];word=last['lower']
+        rights=[x for x in page.header_vertical_rules if x>word.bbox.x1]
+        if rights:last['right']=min(rights)
+        elif any(abs(r.bbox.x1-page.width)<=r.inner_margin_pixels+2 for r in page.regions):
+            last['right']=float(page.width-1)
     return {'supported':len(columns)>=3,'columns':columns,'issues':issues},outside
 
 
@@ -159,6 +174,21 @@ def _unresolved(packet,span,words,field,raw,reason):
     return field_refs(n,span,[w for line in _lines(words) for w in line])
 
 
+def select_region_words(words):
+    primary=[w for w in words if w.capture_route!='s2b-region-light-text-ocr-v2']
+    alternate=[w for w in words if w.capture_route=='s2b-region-light-text-ocr-v2']
+    lines=_lines(primary);other=_lines(alternate)
+    if not lines or not other:return primary or alternate,[]
+    text=' '.join(w.text for w in lines[0]);alt=' '.join(w.text for w in other[0])
+    codes=subject_matches(text);match=MARKER.fullmatch(alt)
+    original=MARKER.fullmatch(text)
+    if original and match and original[1].replace(' ','').upper()==match[1].replace(' ','').upper() and original[2].upper()!=match[2].upper():
+        return primary,['COMPETING_CROP_TYPE_READINGS']
+    if not MARKER.search(text) and len(codes)==1 and match and re.sub(r'\s','',codes[0].group()).upper()==re.sub(r'\s','',match[1]).upper():
+        return other[0]+[w for line in lines[1:] for w in line],['TYPE_RECOVERED_FROM_ALTERNATE_CROP_OCR']
+    return primary,[]
+
+
 def block_fields(packet,page,region,words):
     span=_span(packet,page,words,'region:'+region.region_id,region.bbox)
     nodes=_raw_nodes(packet.source,span,words);issues=[]
@@ -177,6 +207,12 @@ def block_fields(packet,page,region,words):
         for m in markers:
             nodes.append(_field_node(packet,span,words,'course_code',m[1],start=m.start(1)))
             nodes.append(_field_node(packet,span,words,'session_type',m[2],start=m.start(2)))
+    elif subject_matches(texts[0] if texts else ''):
+        # A damaged type glyph must not turn a code-like room on another line
+        # into a second course anchor.
+        first=subject_matches(texts[0])
+        nodes=[n for n in nodes if n.field!='course_code']
+        for m in first:nodes.append(_field_node(packet,span,words,'course_code',m.group()))
     elif not any(n.field=='course_code' for n in nodes):
         issues.append('COURSE_IDENTITY_UNRESOLVED')
         nodes.append(_unresolved(packet,span,words,'course_code',texts[0] if texts else span.raw_text,'unreadable-course-marker'))
@@ -184,18 +220,25 @@ def block_fields(packet,page,region,words):
     venue_lines=[]
     for i,text in enumerate(texts):
         if i in course_lines or re.search(r'\d{1,2}:\d{2}|[AP]M\b',text,re.I):continue
-        if re.fullmatch(r'(?:[A-Z0-9]+(?:[-_/][A-Z0-9]+)+|[A-Z]{1,5}\d+[A-Z]?|TBA|UNKNOWN)',text):
+        if re.fullmatch(r'(?:[A-Z0-9]+(?:[-_/][A-Z0-9]+)+|[A-Z]{1,5}\d+[A-Z]?|TBA|UNKNOWN)',text,re.I):
             venue_lines.append(i)
     if not any(n.field=='location' for n in nodes):
         for i in venue_lines:
             nodes.append(_field_node(packet,span,words,'location',texts[i]))
         if len(venue_lines)>1:issues.append('COMPETING_BARE_VENUE_LINES')
+    bare_identifiers=[i for i,t in enumerate(texts) if i not in course_lines and
+        re.fullmatch(r'[A-Z]{1,5}(?: [A-Z0-9]{1,5})?',t) and i not in venue_lines and not ROLE_LABEL.search(t)]
+    if bare_identifiers:
+        issues.append('BARE_IDENTIFIER_ROLE_UNRESOLVED')
+        for i in bare_identifiers:
+            for field in ('section','location'):
+                nodes.append(_unresolved(packet,span,words,field,texts[i],'bare-identifier-group-or-venue-unknown'))
     if len(course_lines)==1:
         i=course_lines[0]+1
-        if i<len(lines) and i not in venue_lines and not ROLE_LABEL.search(texts[i]) and not re.search(r'\d{1,2}:\d{2}|[AP]M\b',texts[i],re.I) and not MARKER.search(texts[i]):
+        if i<len(lines) and i not in venue_lines and i not in bare_identifiers and not ROLE_LABEL.search(texts[i]) and not re.search(r'\d{1,2}:\d{2}|[AP]M\b',texts[i],re.I) and not MARKER.search(texts[i]):
             nodes.append(_field_node(packet,span,words,'course_name',texts[i]))
-    if not any(n.field=='lecturer' for n in nodes) and len(venue_lines)==1:
-        index=venue_lines[0]+1
+    if not any(n.field=='lecturer' for n in nodes) and len(venue_lines+bare_identifiers)==1:
+        index=(venue_lines+bare_identifiers)[0]+1
         if index<len(lines) and index not in course_lines and not re.search(r'\d{1,2}:\d{2}|[AP]M\b|\b(?:group|section|cohort)\b',texts[index],re.I):
             nodes.append(_field_node(packet,span,words,'lecturer',texts[index]))
             nodes[-1]=nodes[-1].model_copy(update={'transformations':nodes[-1].transformations+('s2b-declared-template-line-after-venue',)})
@@ -263,6 +306,49 @@ def _clock_compatible(raw,value):
     return int(match[2])==m and int(match[1])%12==h%12
 
 
+def anchored_axis(page,axis):
+    """Resolve only a continuous clock sequence with explicit source AM/PM anchors.
+
+    Clock ordering alone is never meridiem authority. Every explicit, geometrically
+    matched block must agree; a conflicting or unreadable sequence gives no axis.
+    """
+    columns=axis['columns']
+    if len(columns)<3:return None
+    sequence=[]
+    for col in columns:
+        pair=[]
+        for key in ('upper','lower'):
+            m=CLOCK.fullmatch(col[key].text.strip())
+            if not m or m[3] or not 1<=int(m[1])<=12:return None
+            pair.append((int(m[1])%12)*60+int(m[2]))
+        start,end=pair
+        if sequence:
+            start=sequence[-1][1]
+            if start%720!=pair[0]:return None
+        while end<=start:end+=720
+        if end-start>240:return None
+        sequence.append((start,end))
+    anchors=[]
+    for region in page.regions:
+        occupied=_geometry_span(region,axis)
+        if not occupied:continue
+        words,_=select_region_words([w for w in page.words if w.region_id==region.region_id])
+        matches=[(TIME_RE.fullmatch(' '.join(w.text for w in line)),line) for line in _lines(words)]
+        matches=[(m,line) for m,line in matches if m and all(re.search(r'[AP]M',m[i],re.I) for i in (1,2))]
+        if len(matches)!=1:continue
+        m,line=matches[0];values=[normalize_time(m[i]) for i in (1,2)]
+        if not all(values):continue
+        minutes=[int(v[:2])*60+int(v[3:]) for v in values]
+        start=sequence[columns.index(occupied[0])][0];end=sequence[columns.index(occupied[-1])][1]
+        if minutes[0]-start!=minutes[1]-end:return None
+        anchors.append((minutes[0]-start,line))
+    offsets={offset for offset,_ in anchors}
+    if len(offsets)!=1:return None
+    offset=offsets.pop()
+    if offset%720 or sequence[0][0]+offset<0 or sequence[-1][1]+offset>=1440:return None
+    return [(a+offset,b+offset) for a,b in sequence],[w for _,line in anchors for w in line]
+
+
 def associate_time(packet,page,region,span,words,nodes,axis,outside):
     occupied=_geometry_span(region,axis);derived=[];issues=[]
     if not occupied:return nodes,derived,['BLOCK_HEADER_BOUNDARIES_UNRESOLVED']
@@ -284,12 +370,24 @@ def associate_time(packet,page,region,span,words,nodes,axis,outside):
     a,b=CLOCK.fullmatch(upper.text.strip()),CLOCK.fullmatch(lower.text.strip())
     if not a or not b:return nodes,derived,['HEADER_CLOCK_UNREADABLE']
     explicit=bool(a[3] and b[3])
-    if not explicit and not authority:return nodes,derived,['AXIS_MERIDIEM_UNRESOLVED']
+    inferred=anchored_axis(page,axis) if not explicit and not authority else None
+    if not explicit and not authority and inferred is None:return nodes,derived,['AXIS_MERIDIEM_UNRESOLVED']
+    inferred_values=None
+    if inferred:
+        minutes,anchor_words=inferred
+        inferred_values=[minutes[axis['columns'].index(occupied[0])][0],minutes[axis['columns'].index(occupied[-1])][1]]
+        authority=anchor_words
+        issues.append('TIME_INFERRED_FROM_EXPLICITLY_ANCHORED_AXIS')
     pair='time-pair:s2b-'+digest({'region':region.region_id,'upper':upper.evidence_id,'lower':lower.evidence_id})
     for field,word in [('start_time',upper),('end_time',lower)]:
         h=_span(packet,page,[word,*authority],'clock-column-'+field);derived.append(h)
         node=_field_node(packet,h,[word,*authority],field,word.text,shared=True)
-        nodes.append(node.model_copy(update={'transformations':node.transformations+(pair,'s2b-printed-axis-authority',)}))
+        updates={'transformations':node.transformations+(pair,'s2b-printed-axis-authority',)}
+        if inferred_values is not None:
+            value=inferred_values[0 if field=='start_time' else 1]
+            updates.update(value=f'{value//60:02d}:{value%60:02d}',state=FieldState.PRESENT,
+                transformations=node.transformations+(pair,'s2b-geometry-time-inference-with-explicit-meridiem-anchor',))
+        nodes.append(node.model_copy(update=updates))
     return nodes,derived,issues
 
 
@@ -325,7 +423,15 @@ def block_graph(packet,supplement):
                     'word_ids':[w.evidence_id for w in words],'axis_supported':axis['supported'],'columns':columns}
             if not words:
                 detail['status']='REGION_WITHOUT_READABLE_WORDS';details.append(detail);continue
-            span,nodes,local_issues=block_fields(packet,page,region,words);evidence[span.evidence_id]=span
+            words,ocr_issues=select_region_words(words)
+            span,nodes,local_issues=block_fields(packet,page,region,words);local_issues.extend(ocr_issues);evidence[span.evidence_id]=span
+            detail['selected_word_ids']=[w.evidence_id for w in words]
+            if 'COMPETING_CROP_TYPE_READINGS' in ocr_issues:
+                nodes=[n.model_copy(update={'value':None,'state':FieldState.UNRESOLVED,
+                    'transformations':n.transformations+('competing-crop-type-readings',)}) if n.field=='session_type' else n for n in nodes]
+            if not any(n.field=='course_code' and n.state==FieldState.PRESENT for n in nodes) and not TYPE_MARKER.search(span.raw_text):
+                detail.update(status='NON_SESSION_REGION',issues=local_issues)
+                details.append(detail);continue
             if not axis['supported']:
                 local_issues.append('UNSUPPORTED_TABLE_AXES')
                 if not MARKER.search(span.raw_text):
@@ -354,7 +460,7 @@ def block_graph(packet,supplement):
     graph=base.model_copy(update={'evidence':tuple(evidence[k] for k in sorted(evidence)),
         'groups':tuple(sorted(groups,key=lambda g:g.group_id)),
         'diagnostics':base.diagnostics+('S2B_APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',)})
-    layout={'profile':PROFILE,'version':'s2b.1','config_digest':CONFIG_HASH,'regions':details,'issues':issues,
+    layout={'profile':PROFILE,'version':'s2b.rt2.1','config_digest':CONFIG_HASH,'regions':details,'issues':issues,
         'association_operations':operations,'registered_method':False,
         'trust':'CALLER_SUPPLIED_PIXEL_AND_OCR_EVIDENCE_NOT_AUTHENTICATED'}
     return graph,settings,layout

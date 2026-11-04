@@ -18,7 +18,7 @@ from backend.layout.block_models import (BlockPage, BlockWord, ColorRegion, PROF
 
 DETECTION_CONFIG={'quantization_bits':5,'minimum_chroma':24,'minimum_fill':.58,
     'minimum_area_fraction':.00025,'minimum_side_fraction':.012,
-    'crop_scale':3,'crop_border_source_pixels':6,'max_operations':MAX_OPERATIONS,
+    'crop_scale':4,'crop_border_source_pixels':6,'max_operations':MAX_OPERATIONS,
     'bridge_erosion_radius_fraction':.001,'minimum_proposal_fill':.20,
     'rectangular_border_coverage':.90}
 
@@ -40,7 +40,7 @@ def _longest(mask):
     return best
 
 
-def structural_rules(rgb):
+def structural_rules(rgb, minimum_run=25):
     """Thin local contrast strokes; does not interpret text or clock values."""
     gray=np.asarray(Image.fromarray(rgb).convert('L')).astype(np.int16)
     chroma=rgb.max(axis=2).astype(np.int16)-rgb.min(axis=2)
@@ -48,7 +48,7 @@ def structural_rules(rgb):
     vertical=np.zeros((h,w),dtype=bool);horizontal=vertical.copy()
     vertical[:,gap:-gap]=(gray[:,gap:-gap]+3<np.minimum(gray[:,:-2*gap],gray[:,2*gap:])) & (chroma[:,gap:-gap]<24)
     horizontal[gap:-gap,:]=(gray[gap:-gap,:]+3<np.minimum(gray[:-2*gap,:],gray[2*gap:,:])) & (chroma[gap:-gap,:]<24)
-    vs=_thin_peaks(_longest(vertical)>=max(25,h*.12),max(4,round(w*.004)))
+    vs=_thin_peaks(_longest(vertical)>=max(minimum_run,h*.12),max(4,round(w*.004)))
     hs=_thin_peaks((horizontal.sum(axis=1)>=w*.35) & (_longest(horizontal.T)>=w*.04),max(4,round(h*.006)))
     if len(vs)>128 or len(hs)>64:raise ValueError('S2B_RULE_CAP')
     return vs,hs
@@ -145,14 +145,26 @@ def capture_words(source_id,page,data,line_regions,route,transform,region_id=Non
     return words
 
 
-def prepare_crop(image,region):
+def prepare_crop(image,region, *, white_text=False, dark_text=False):
     b=region.bbox if hasattr(region,'bbox') else region
+    if (int(b.x1-b.x0)*4+48)*(int(b.y1-b.y0)*4+48)>MAX_PIXELS:
+        raise ValueError('S2B_CROP_PIXEL_CAP')
     crop=image.crop((int(b.x0),int(b.y0),int(b.x1),int(b.y1))).convert('RGB')
-    bitmap=crop.resize((crop.width*3,crop.height*3),Image.Resampling.LANCZOS)
-    bitmap=ImageOps.expand(bitmap,border=18,fill='white')
+    bitmap=crop.resize((crop.width*4,crop.height*4),Image.Resampling.LANCZOS)
+    operation='region RGB crop; Lanczos 4x resize; 24px white border'
+    if white_text:
+        gray=bitmap.convert('L');pixels=np.asarray(gray)
+        threshold=round(float(np.median(pixels))*.45+float(np.percentile(pixels,99.5))*.55)
+        bitmap=gray.point(lambda value: 0 if value>threshold else 255)
+        operation=f'region crop; Lanczos 4x; light-text threshold {threshold}; inversion; 24px white border'
+    if dark_text:
+        gray=bitmap.convert('L');threshold=round(float(np.median(np.asarray(gray)))*.75)
+        bitmap=gray.point(lambda value: 0 if value<threshold else 255)
+        operation=f'region crop; Lanczos 4x; dark-text threshold {threshold}; 24px white border'
+    bitmap=ImageOps.expand(bitmap,border=24,fill='white')
     return bitmap,{
-        'operation':'region RGB crop; Lanczos 3x resize; 18px white border',
-        'crop':[b.x0,b.y0,b.x1,b.y1],'scale_x':3,'scale_y':3,'padding_x':18,'padding_y':18,
+        'operation':operation,
+        'crop':[b.x0,b.y0,b.x1,b.y1],'scale_x':4,'scale_y':4,'padding_x':24,'padding_y':24,
         'source_space':'PIXELS','target_space':'PIXELS',
         'output_boxes_mapped_to':'ORIGINAL_PAGE_PIXELS','rotation_applied_degrees':0}
 
@@ -174,11 +186,11 @@ class BlockCollector(list):
         if sum(len(p.regions) for p in self)+len(regions)>MAX_DOCUMENT_REGIONS:raise ValueError('S2B_DOCUMENT_REGION_CAP')
         words=capture_words(source_id,page,data,line_regions,adapter,transform,existing_lines=True)
         diagnostics=[]
-        def local_ocr(box,route,region_id=None):
+        def local_ocr(box,route,region_id=None,white_text=False):
             if time.monotonic()-self.started>60:raise ValueError('S2B_EXTRACTION_WATCHDOG')
             self.local_calls+=1
             if self.local_calls>64:raise ValueError('S2B_LOCAL_OCR_CALL_CAP')
-            crop,local_transform=prepare_crop(image,box)
+            crop,local_transform=prepare_crop(image,box,white_text=white_text,dark_text=route=='s2b-row-header-crop-ocr-v1')
             if crop.width*crop.height>MAX_PIXELS:raise ValueError('S2B_CROP_PIXEL_CAP')
             try:local,local_runtime=recognize(crop)
             except OCRRuntimeError as error:
@@ -186,14 +198,21 @@ class BlockCollector(list):
             b=box.bbox if hasattr(box,'bbox') else box
             local_transform={**local_transform,'parent_page_transform':transform,'runtime':local_runtime}
             words.extend(capture_words(source_id,page,local,line_regions,route,local_transform,
-                                       region_id,(b.x0-6,b.y0-6),3))
+                                       region_id,(b.x0-6,b.y0-6),4))
             if len(words)>MAX_WORDS:raise ValueError('S2B_WORD_CAP')
-        for region in regions:local_ocr(region,'s2b-region-crop-ocr-v1',region.region_id)
+        for region in regions:
+            local_ocr(region,'s2b-region-crop-ocr-v1',region.region_id)
+            b=region.bbox
+            pixels=np.asarray(image.crop((int(b.x0),int(b.y0),int(b.x1),int(b.y1))).convert('L'))
+            # Only use light-text preprocessing on a genuinely darker background.
+            if np.median(pixels)<180 and np.percentile(pixels,99.5)>np.median(pixels)+50:
+                local_ocr(region,'s2b-region-light-text-ocr-v2',region.region_id,white_text=True)
         # Source-derived context crops preserve separately observed OCR readings.
         # No character correction or lexical substitution is performed.
         clocks=[w for w in words if w.capture_route==adapter and
             re.fullmatch(r'\d{1,2}[:.]\d{2}',w.text.strip()) and
             w.bbox.y1<=min((r.bbox.y0 for r in regions),default=0)]
+        header_rules=()
         if len(clocks)>=6 and regions:
             height=max(w.bbox.y1-w.bbox.y0 for w in clocks)
             box=BoundingBox(x0=max(0,int(min(w.bbox.x0 for w in clocks)-height)),
@@ -201,13 +220,21 @@ class BlockCollector(list):
                 x1=min(image.width,int(max(w.bbox.x1 for w in clocks)+height+1)),
                 y1=min(image.height,int(max(w.bbox.y1 for w in clocks)+height+1)),coordinate_space='PIXELS')
             local_ocr(box,'s2b-axis-crop-ocr-v1')
-            left=min(min(r.bbox.x0 for r in regions),min(w.bbox.x0 for w in clocks))
+            # Measure the header itself: body half-hour subdivisions must not
+            # become hour boundaries under centered header labels.
+            y0=max(0,int(min(w.bbox.y0 for w in clocks)-height*.3))
+            y1=min(image.height,int(max(w.bbox.y1 for w in clocks)+height*.3))
+            header_rules=structural_rules(np.asarray(image.convert('RGB'))[y0:y1],minimum_run=8)[0]
+            first_clock=min(w.bbox.x0 for w in clocks)
+            left=max((v for v in header_rules if v<first_clock),default=min(r.bbox.x0 for r in regions))
             bands=sorted(set((r.bbox.y0,r.bbox.y1) for r in regions))
             for y0,y1 in bands:
                 if left>10:
-                    box=BoundingBox(x0=0,y0=y0,x1=int(left),y1=y1,coordinate_space='PIXELS')
+                    margin=max(2,round(height*.5))
+                    box=BoundingBox(x0=margin,y0=y0,x1=int(left)-margin,y1=y1,coordinate_space='PIXELS')
                     local_ocr(box,'s2b-row-header-crop-ocr-v1')
         if sum(len(p.words) for p in self)+len(words)>MAX_DOCUMENT_WORDS:raise ValueError('S2B_DOCUMENT_WORD_CAP')
         self.append(BlockPage(page=page,width=image.width,height=image.height,route=adapter,transform=transform,
             runtime=runtime,words=tuple(words),regions=regions,vertical_rules=vs,horizontal_rules=hs,
+            header_vertical_rules=header_rules,
             diagnostics=tuple(diagnostics),detection_operations=operations))
