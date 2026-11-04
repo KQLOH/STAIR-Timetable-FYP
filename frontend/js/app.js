@@ -16,6 +16,7 @@ const state = {
 
     filter: "all",
     search: "",
+    sort: "time",
 
     connectionToken: null,
     studentName: null
@@ -1024,13 +1025,15 @@ function normaliseIntranetEvent(
 const uploadController = new STAIRUpload.Controller({base:API_BASE, notify:result => {
     state.reviewSnapshot=null;state.reviewStale=false;
     state.upload = result;
+    const inspection=document.getElementById("sourceInspection");if(inspection){inspection.hidden=true;inspection.replaceChildren();}
     state.source = "upload";
     state.canonical = null;
     state.events = STAIRUpload.displayedEvents(result);
     state.meta = null;
     setText("documentName", result.filename);
     setText("documentMeta", `${formatFileSize(result.size)} · ${result.mime || "validating"} · ${result.pipeline}`);
-    setText("processingStatus", result.status);
+    setText("processingStatus",result.busy ? "Reading your timetable…" : result.stages.extraction==='FAILED' ? "Unable to read this file. Try again or replace it." :
+        result.status?.includes('CANCELLED') ? "Processing cancelled." : result.diagnostics.length ? "Ready to review. Some details may be missing; see technical details." : "Ready to review. Check the extracted details below.");
     setText("runStatus", result.status);
     const progress = document.getElementById("uploadProgress"); if (progress) progress.hidden = !result.busy;
     const cancel = document.getElementById("cancelUpload");
@@ -1218,24 +1221,12 @@ function renderEverything() {
 
 function renderMetrics() {
 
-    const detected =
-        state.events.length;
-
-
-    const ready =
-        state.events.filter(
-            event =>
-                event.completeCandidate === true
-        ).length;
-
-
-    const review =
-        state.events.filter(
-            event =>
-                event.completeCandidate !== true && event.status === "review"
-        ).length;
-
-
+    const all=STAIRUpload.uniqueEvents(state.events);
+    const detected=all.length;
+    const ready=all.filter(e=>e.completeCandidate===true).length;
+    const review=detected-ready;
+    setText("reviewFound",detected);setText("reviewComplete",ready);setText("reviewNeedsReview",review);
+    setText("reviewVerified",all.filter(e=>STAIRUpload.verified(e.canonical)).length);
     setText(
         "metricDetected",
         detected || "—"
@@ -1316,10 +1307,10 @@ function renderMetrics() {
 
     if (subtitle) {
 
-        subtitle.textContent = state.reviewStale ? "Application review pending or stale — old policy, preview and analysis are invalidated." : state.reviewSnapshot
-            ? `${detected} authorized visible application records. Current revisions are separate from original decoder predictions; complete schedule remains unverified.` : state.upload
-            ? `${state.upload.status}. ${detected} displayed hypotheses; inspect separate baseline and P1 stages.`
-            : detected ? `${detected} structured/demo events; M5 NOT ASSESSED; calendar BLOCKED.` : "Upload or import a timetable to begin.";
+        subtitle.textContent=state.reviewStale ? "A review update is pending. Previous diagnostics are no longer current." : state.upload?.busy
+            ? "Reading your timetable. Classes will appear here when ready." : state.upload?.stages?.extraction==='FAILED'
+            ? "This file could not be processed. Retry or upload a clearer image." : detected
+            ? "Check your class details against the original timetable." : "Upload or import a timetable to begin.";
 
     }
 }
@@ -1330,6 +1321,7 @@ function renderMetrics() {
 // =========================================================
 
 function setupReviewControls() {
+    document.getElementById("eventSort")?.addEventListener("change",event=>{state.sort=event.target.value;renderReview();});
 
     document
         .querySelectorAll(
@@ -1361,6 +1353,7 @@ function setupReviewControls() {
                         button.dataset.filter;
 
 
+                    document.querySelectorAll("#eventFilters button").forEach(item=>item.setAttribute("aria-pressed",String(item===button)));
                     renderReview();
                 }
             );
@@ -1535,6 +1528,8 @@ function renderReview() {
 
     // Uploads must use canonical evidence/status rendering, never the legacy TAR UMT template.
     const demo = state.source === "sample";
+    const bulk=document.getElementById("demoBulkControls");if(bulk)bulk.hidden=!demo;
+    setText("visibleClassCount",`${getVisibleEvents().length} of ${STAIRUpload.uniqueEvents(state.events).length} classes`);
     for (const id of ["approveSelected", "deleteSelected", "selectAll"]) {
         const control = document.getElementById(id); if (control) control.disabled = !demo;
     }
@@ -1683,46 +1678,7 @@ function renderReview() {
 
 
 function getVisibleEvents() {
-
-    return state.events.filter(
-        event => {
-
-            const filterOK =
-                state.filter === "all"
-                ||
-                (state.filter === "accepted" ? event.completeCandidate === true :
-                    state.filter === "review" ? !event.completeCandidate && event.status === "review" : event.status === state.filter);
-
-
-            const haystack =
-                [
-                    event.subject,
-                    event.subjectName,
-                    event.venue,
-                    event.type,
-                    event.lecturer,
-                    event.date
-                ]
-                .join(" ")
-                .toLowerCase();
-
-
-            const searchOK =
-                !state.search
-                ||
-                haystack.includes(
-                    state.search
-                );
-
-
-            return (
-                filterOK
-                &&
-                searchOK
-            );
-
-        }
-    );
+    return STAIRUpload.filteredEvents(state.events,state.filter,state.search,state.sort);
 }
 
 

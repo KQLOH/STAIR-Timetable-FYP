@@ -226,7 +226,7 @@
         return {id:event.candidate_id, subject:content.course_code || "Unresolved course", subjectName:content.course_name || "",
             day:DAY[content.day_of_week], date:content.date || "Unresolved date", start:content.start_time || "?", end:content.end_time || "?",
             venue:content.location || "Unresolved venue", type:content.session_type || "Unresolved type", source:layer,
-            status:"review", completeCandidate:complete, selected:false, canonical:event};
+            lecturer:content.lecturer || "", section:content.section || "", status:"review", completeCandidate:complete, selected:false, canonical:event};
     }
     function assessmentBody(packet, reconstruction, layoutEvidence) {
         const raw = responseJSON.get(reconstruction);
@@ -242,9 +242,9 @@
     function displayedEvents(result) {
         const output = result?.reconstruction?.canonical_output;
         const label = sourceLabel(result?.extraction?.source);
-        return output ? [...output.packet.events, ...output.unresolved_candidates].map(e => ({...eventView(e, label),
+        return uniqueEvents(output ? [...output.packet.events, ...output.unresolved_candidates].map(e => ({...eventView(e, label),
             methodLabel:output.profile_id, partialProjection:output.unresolved_candidates.some(p=>p.candidate_id===e.candidate_id)})) :
-            (result?.extraction?.events || []).map(e => ({...eventView(e,label),methodLabel:result.pipeline}));
+            (result?.extraction?.events || []).map(e => ({...eventView(e,label),methodLabel:result.pipeline})));
     }
     function sourceLabel(source, {sample = false} = {}) {
         if (sample && source == null) return "Synthetic demonstration sample";
@@ -307,17 +307,17 @@
         container.append(details("M6 read-only diagnostics and preview digest", result.calendar || "BLOCKED — NOT ASSESSED"));
         container.append(node("p", "M6 receives no fabricated full assessment: the public M5 response omits complete findings. No approval or synchronization is available."));
         for (const span of sourceSpans(result)) {
-            const button = node("button", `${span.evidence_id} · page ${span.page ?? "unknown"} · ${span.route} · OCR confidence ${span.confidence ?? "unavailable"}`, "text-button evidence-link");
+            const button = node("button", `Page ${span.page ?? "unknown"} · ${span.route} · Highlight source`, "text-button evidence-link");
             button.type="button";button.dataset.evidenceId=span.evidence_id;
             const entry=node("div",null,"evidence-entry");entry.dataset.evidenceId=span.evidence_id;
-            entry.append(button,node("pre",span.raw_text),node("small",span.bbox ? JSON.stringify(span.bbox) : "Coordinates unavailable"));
+            entry.append(button,reference(span.evidence_id),node("pre",span.raw_text),node("small",span.bbox ? JSON.stringify(span.bbox) : "Coordinates unavailable"));
             button.addEventListener("click",()=>highlightEvidence(span.evidence_id));container.append(entry);
         }
     }
     function highlightEvidence(id) {
         global.document.querySelectorAll("[data-evidence-id]").forEach(element => element.classList.toggle("evidence-selected", element.dataset.evidenceId === id));
         const entry=[...global.document.querySelectorAll(".evidence-entry")].find(e=>e.dataset.evidenceId===id);
-        entry?.scrollIntoView?.({block:"nearest",behavior:"smooth"});
+        if(entry?.getClientRects?.().length) entry.scrollIntoView?.({block:"nearest",behavior:"smooth"});
     }
     function originalEvidenceId(result,id) {
         return Object.entries(result?.reconstruction?.execution_metadata?.capture_aliases || {}).find(([,alias])=>alias===id)?.[0] || id;
@@ -348,6 +348,8 @@
         } else {
             const frame=node("div",null,"source-frame");const image=node("img");image.src=result.previewUrl;image.alt="Local uploaded timetable";
             image.addEventListener("load",()=>drawBoxes(frame,image,result));frame.append(image);container.append(frame);
+            const expand=node("button","Expand source image","button secondary source-expand");expand.type="button";
+            expand.addEventListener("click",()=>expandSource(result));container.append(expand);
             const orientation=result.layoutEvidence?.pages?.find(p=>p.page===1)?.transform?.source_exif_orientation;
             if (orientation != null && orientation !== 1) container.append(node("p","Source orientation differs: overlay disabled. Inspect the listed original coordinates."));
         }
@@ -367,29 +369,140 @@
             const box=node("button",null,"evidence-box");box.type="button";box.dataset.evidenceId=span.evidence_id;
             box.setAttribute("aria-label",`Highlight evidence ${span.evidence_id}`);box.title=span.evidence_id;
             Object.assign(box.style,{left:`${100*b.x0/image.naturalWidth}%`,top:`${100*b.y0/image.naturalHeight}%`,width:`${100*(b.x1-b.x0)/image.naturalWidth}%`,height:`${100*(b.y1-b.y0)/image.naturalHeight}%`});
-            box.addEventListener("click",()=>highlightEvidence(span.evidence_id));frame.append(box);
+            box.addEventListener("click",()=>{
+                highlightEvidence(span.evidence_id);
+                const view=displayedEvents(result).find(v=>eventRegions(v.canonical,result).some(m=>m.region.region_id===span.evidence_id));
+                if(view)inspectEvent(view.canonical,result,box);
+            });frame.append(box);
         }
+    }
+    function uniqueEvents(events) {
+        const seen=new Set();
+        return events.filter(e=>{const key=e.id && `${e.id}:${e.canonical?.revision?.revision_id || ''}`;
+            if (!key) return true; if (seen.has(key)) return false; seen.add(key); return true;});
+    }
+    function filteredEvents(events, filter='all', search='', sort='time') {
+        const query=search.trim().toLowerCase();
+        return uniqueEvents(events).filter(e=>(filter==='all' || (filter==='accepted' ? e.completeCandidate : filter==='review' ? !e.completeCandidate : e.status===filter)) &&
+            [e.subject,e.subjectName,e.lecturer,e.venue,e.section,e.type,e.date].join(' ').toLowerCase().includes(query))
+            .sort((a,b)=>{
+                if (sort==='course') {const name=(a.subject || '').localeCompare(b.subject || '');if(name)return name;}
+                const key=e=>/^\d{4}-\d{2}-\d{2}$/.test(e.date || '') ? e.date : `9999-${e.canonical?.revision?.content?.day_of_week || 9}`;
+                return key(a).localeCompare(key(b)) || (a.start || '99:99').localeCompare(b.start || '99:99') || (a.id || '').localeCompare(b.id || '');
+            });
+    }
+    function verified(event) {
+        return ['MANUALLY_VERIFIED_REFERENCE','INDEPENDENTLY_VERIFIED'].includes(event?.human_verification?.status);
+    }
+    function friendlyDate(content) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(content.date || '')) {
+            const date=new Date(content.date+'T12:00:00Z');
+            if (Number.isFinite(date.getTime())) return new Intl.DateTimeFormat('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(date);
+        }
+        return content.day_of_week ? ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][content.day_of_week]+' · Date not confirmed' : 'Day and date not confirmed';
+    }
+    function friendlyTime(value) {
+        const match=/^(\d{2}):(\d{2})$/.exec(value || '');
+        return match ? `${Number(match[1])%12 || 12}:${match[2]} ${Number(match[1])<12?'AM':'PM'}` : 'Time not confirmed';
+    }
+    function eventRegions(event,result) {
+        const ids=new Set(event.revision.observations.flatMap(o=>o.evidence_ids));
+        return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>
+            page.words.some(w=>w.region_id===r.region_id && ids.has(w.evidence_id))).map(region=>({page,region})));
+    }
+    function reference(id) {
+        const row=node('div',null,'reference-row');const code=node('code',id.length>28?id.slice(0,14)+'…'+id.slice(-10):id);
+        code.title=id;const copy=node('button','Copy full ID','text-button');copy.type='button';
+        copy.addEventListener('click',async()=>{try {await global.navigator.clipboard.writeText(id);copy.textContent='Copied';}
+            catch {copy.textContent='Copy unavailable';row.append(node('code',id));}});
+        row.append(code,copy);return row;
+    }
+    function regionReadings(page,region) {
+        const groups=new Map();
+        for(const w of page.words.filter(w=>w.region_id===region.region_id)) {
+            const key=w.capture_route+' / '+w.parent_line_id;
+            if(!groups.has(key))groups.set(key,{route:w.capture_route,words:[]});groups.get(key).words.push(w);
+        }
+        return [...groups.values()].map(g=>({route:g.route,text:g.words.sort((a,b)=>a.bbox.x0-b.bbox.x0).map(w=>w.text).join(' '),
+            confidence:g.words.every(w=>w.confidence!=null)?Math.round(100*g.words.reduce((sum,w)=>sum+w.confidence,0)/g.words.length)+'%':'Unavailable'}));
+    }
+    function inspectEvent(event,result,trigger) {
+        const panel=global.document.getElementById('sourceInspection');if(!panel)return;
+        const matches=eventRegions(event,result);panel.replaceChildren();panel.hidden=false;
+        const back=node('button','Back to classes','text-button');back.type='button';
+        back.addEventListener('click',()=>{panel.hidden=true;trigger?.focus?.();});
+        const title=node('h3',event.revision.content.course_code || 'Selected class');title.tabIndex=-1;
+        panel.append(back,title,node('p','Original image and OCR readings. These may differ from the interpreted fields.','inspection-note'));
+        global.document.querySelectorAll('.class-card').forEach(card=>card.classList.toggle('is-selected',card.dataset.candidateId===event.candidate_id));
+        if(!matches.length)panel.append(node('p','A source image region is unavailable. Open the class’s technical details to inspect its evidence.'));
+        for(const {page,region} of matches) {
+            highlightEvidence(region.region_id);
+            const image=global.document.querySelector('#documentPreview img'),b=region.bbox;
+            if(image?.complete && image.naturalWidth===page.width && image.naturalHeight===page.height && page.page===1 &&
+                b.coordinate_space==='PIXELS' && [null,undefined,1].includes(page.transform?.source_exif_orientation) &&
+                b.x0>=0 && b.y0>=0 && b.x1<=page.width && b.y1<=page.height && b.x1>b.x0 && b.y1>b.y0) {
+                const canvas=node('canvas');canvas.width=Math.ceil(b.x1-b.x0)*2;canvas.height=Math.ceil(b.y1-b.y0)*2;
+                canvas.setAttribute('role','img');canvas.setAttribute('aria-label','Original source crop for selected class');
+                canvas.getContext('2d').drawImage(image,b.x0,b.y0,b.x1-b.x0,b.y1-b.y0,0,0,canvas.width,canvas.height);panel.append(canvas);
+            } else panel.append(node('p','Crop unavailable for this source orientation or coordinate space.'));
+            const ocr=details('Original OCR readings',regionReadings(page,region));ocr.open=true;panel.append(ocr);
+            panel.append(details('Interpreted fields',event.revision.content));
+        }
+        panel.scrollIntoView?.({block:'nearest',behavior:'smooth'});title.focus?.({preventScroll:true});
+    }
+    function expandSource(result) {
+        const dialog=global.document.getElementById('sourceZoom');if(!dialog || !result.previewUrl)return;
+        const area=global.document.getElementById('sourceZoomContent');area.replaceChildren();
+        const image=node('img');image.src=result.previewUrl;image.alt='Expanded original timetable';area.append(image);
+        const slider=global.document.getElementById('sourceZoomScale');slider.value='100';image.style.width='100%';
+        slider.oninput=()=>{image.style.width=slider.value+'%';};
+        global.document.getElementById('closeSourceZoom').onclick=()=>dialog.close();dialog.showModal();
     }
     function renderCards(events,result,container) {
         container.replaceChildren();
-        if (!events.length) { container.append(node("p",result.stages.extraction === "FAILED" ? "Processing failure — no successful candidate list." : result.busy ? "Processing…" :
-            "No candidates in this view. Inspect evidence, pipeline choice, unresolved output and diagnostics.")); return; }
-        for (const view of events) {
-            const event=view.canonical;const card=node("article",null,"event-card review");const body=node("div",null,"event-main");
-            const decision=result.policy?.find(d=>d.candidate_id===event.candidate_id);
-            body.append(node("strong",`${view.subject}${view.subjectName ? " · " + view.subjectName : ""} · ${view.type}`),node("p",`${view.date} / ${view.day || "Unresolved day"} · ${view.start}–${view.end} · ${view.venue}`),
-                node("p",`${view.source} · ${view.methodLabel || "candidate"}: ${view.completeCandidate ? "Complete candidate (field presence only)" : "Partial / unresolved candidate"}; extraction ${event.extraction_status}${view.partialProjection ? "; unselected supported-field projection, not a decoder prediction" : ""}`),
-                node("p",`M5: ${decision?.decision || "NOT ASSESSED"} · Human review: ${event.human_review?.status || "NOT_REVIEWED"} · Verification: ${event.human_verification?.status || "NOT_VERIFIED"}`),
-                node("p","Calendar: BLOCKED · Approval: NOT APPROVED · Synchronization: NOT SUBMITTED"));
-            if (decision) body.append(details("Policy reasons and review requirements",decision));
-            body.append(details("Field states, evidence links and alternatives",event.revision.observations),details("Constraint status and findings",event.validation));
-            for (const id of new Set(event.revision.observations.flatMap(f=>f.evidence_ids))) {
-                const label=result.layoutEvidence ? `${/^s2[ab]-word-/.test(id) ? "word" : "region"} ${id.slice(-12)}` : id;
-                const link=node("button",`Source evidence: ${label}`,"text-button");link.type="button";link.title=id;link.addEventListener("click",()=>highlightEvidence(originalEvidenceId(result,id)));body.append(link);
+        if(!events.length) {container.append(node('div',result.busy?'Reading your timetable…':result.stages?.extraction==='FAILED'?
+            'We couldn’t read this file. Try again or choose a clearer image.':'No classes match this view. Clear your search or choose All classes.','empty-list'));return;}
+        for(const view of events) {
+            const event=view.canonical,c=event.revision.content;
+            const card=node('article',null,'event-card class-card');card.dataset.candidateId=event.candidate_id;
+            const body=node('div',null,'event-main'),heading=node('div',null,'class-heading');
+            heading.append(node('strong',view.subject),node('span',view.type,'class-type'));
+            const status=node('span',view.completeCandidate?'All required fields detected':'Needs review','class-status'+(view.completeCandidate?'':' needs-review'));
+            body.append(heading,node('p',friendlyDate(c),'class-date'),node('p',friendlyTime(c.start_time)+' – '+friendlyTime(c.end_time),'class-time'));
+            const facts=node('div',null,'class-details');
+            facts.append(node('span','Venue: '+(c.location || 'Not confirmed')));
+            if(c.section)facts.append(node('span','Group: '+c.section));
+            if(c.lecturer)facts.append(node('span','Lecturer: '+c.lecturer));
+            if(!c.section && !c.location) {
+                const matches=eventRegions(event,result);
+                for(const {page,region} of matches) {
+                    const detail=result.reconstruction?.canonical_output?.layout?.regions?.find(r=>r.region_id===region.region_id);
+                    if(detail?.issues?.includes('BARE_IDENTIFIER_ROLE_UNRESOLVED')) {
+                        const reading=regionReadings(page,region).find(r=>/^[A-Z]{1,5}(?: [A-Z0-9]{1,5})?$/.test(r.text));
+                        if(reading)facts.append(node('span','Identifier: '+reading.text+' · group or venue needs confirmation','uncertain-field'));
+                    }
+                }
             }
+            body.append(facts);
+            const footer=node('div',null,'class-footer');footer.append(status,node('span',verified(event)?'Verification recorded':'Not yet verified','verification-note'));
+            const inspect=node('button','View source','text-button');inspect.type='button';inspect.addEventListener('click',()=>inspectEvent(event,result,inspect));footer.append(inspect);body.append(footer);
+            const technical=node('details',null,'class-technical');technical.append(node('summary','View OCR details'));
+            for(const {page,region} of eventRegions(event,result))technical.append(details('Original OCR text and confidence',regionReadings(page,region)));
+            const refs=node('details');refs.append(node('summary','View source evidence'));
+            const spans=sourceSpans(result),ids=[...new Set(event.revision.observations.flatMap(o=>o.evidence_ids))];
+            for(const id of ids) {
+                const entry=node('div',null,'compact-evidence');entry.append(reference(id));
+                const span=spans.find(s=>s.evidence_id===originalEvidenceId(result,id));
+                if(span)entry.append(details('Text and coordinates',{text:span.raw_text,confidence:span.confidence,bbox:span.bbox}));refs.append(entry);
+            }
+            technical.append(refs,details('Advanced technical details',{pipeline:view.methodLabel,fields:event.revision.observations,
+                policy:result.policy?.find(d=>d.candidate_id===event.candidate_id) || 'NOT_ASSESSED',validation:event.validation,
+                verification:event.human_verification,calendar:event.calendar,partialProjection:view.partialProjection || false}));body.append(technical);
+            card.addEventListener('click',e=>{if(!e.target.closest?.('button,summary,details,a,input'))inspectEvent(event,result,inspect);});
             card.append(body);container.append(card);
         }
     }
+
     global.STAIRUpload = Object.freeze({MAX_BYTES,PIPELINES,Controller,validateFile,validatePacket,validateExtraction,validateReconstruction,
-        validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,diagnostic,reviewIngestBody,highlightEvidence});
+        validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,uniqueEvents,filteredEvents,verified,eventRegions,friendlyDate,friendlyTime,inspectEvent,expandSource,diagnostic,reviewIngestBody,highlightEvidence});
 })(globalThis);
