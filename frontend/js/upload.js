@@ -277,6 +277,26 @@
         container.append(node("h3", "Evidence and processing stages"),node("p", result.reviewContextNote || "Raw extraction, baseline candidates, P1, policy and calendar states are separate. Trusted-host corrections are unavailable."));
         container.append(details("Stage results and failures", {stages:result.stages, diagnostics:result.diagnostics}));
         if (result.layoutEvidence) container.append(details(result.layoutEvidence.profile === "ocr-block-grid-s2b-v1" ? "S2b supplementary words, colored regions and transforms (application only)" : "S2a supplementary word and pixel-grid evidence (application only)", result.layoutEvidence));
+        if (result.layoutEvidence?.profile === "ocr-block-grid-s2b-v1") {
+            const output=result.reconstruction?.canonical_output;
+            const events=[...(output?.packet?.events || []),...(output?.unresolved_candidates || [])];
+            const inspection=node("details");inspection.append(node("summary","Detected course blocks and OCR readings"));
+            for (const page of result.layoutEvidence.pages) for (const region of page.regions) {
+                const words=page.words.filter(w=>w.region_id===region.region_id);
+                const ids=new Set(words.map(w=>w.evidence_id));
+                const candidates=events.filter(e=>e.revision.observations.some(o=>o.evidence_ids.some(id=>ids.has(id))));
+                const readings={};
+                for (const w of words) (readings[w.capture_route] ||= []).push(w.text);
+                const entry=node("div",null,"evidence-entry");entry.dataset.evidenceId=region.region_id;
+                entry.append(node("strong",`Page ${page.page} · ${region.boundary_status}`),
+                    details("Block OCR, original coordinates and candidate fields",{bbox:region.bbox,
+                        readings:Object.fromEntries(Object.entries(readings).map(([key,value])=>[key,value.join(" ")])),
+                        candidates:candidates.map(e=>({fields:e.revision.content,uncertain:e.revision.observations.filter(o=>o.state!=="PRESENT")})),
+                        diagnostics:output?.layout?.regions?.find(r=>r.region_id===region.region_id)?.issues || []}));
+                inspection.append(entry);
+            }
+            container.append(inspection);
+        }
         const packet = result.extraction; if (!packet) return;
         container.append(node("p",`Source: ${sourceLabel(packet.source)} · Extraction mode: ${result.pipeline}`),details("Source metadata", packet.source),details("Extraction issues", packet.issues));
         container.append(details(`${result.pipeline}: ${packet.events.length} extraction candidates`, packet.events));
@@ -338,7 +358,10 @@
         const page=result.layoutEvidence?.pages?.find(p=>p.page===1);
         if (page && (page.width!==image.naturalWidth || page.height!==image.naturalHeight ||
             ![null,undefined,1].includes(page.transform?.source_exif_orientation))) return;
-        for (const span of sourceSpans(result)) {
+        // Block outlines are the useful default for S2b; all raw word/line
+        // evidence stays accessible in the inspection panel.
+        const overlaySpans=page?.regions?.length ? page.regions.map(r=>({bbox:r.bbox,page:1,evidence_id:r.region_id})) : sourceSpans(result);
+        for (const span of overlaySpans) {
             const b=span.bbox;
             if (!b || b.coordinate_space!=="PIXELS" || span.page!==1 || b.x0<0 || b.y0<0 || b.x1>image.naturalWidth || b.y1>image.naturalHeight) continue;
             const box=node("button",null,"evidence-box");box.type="button";box.dataset.evidenceId=span.evidence_id;

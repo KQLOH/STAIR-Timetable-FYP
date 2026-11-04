@@ -42,6 +42,7 @@ class BlockPage(ContractModel):
     regions: tuple[ColorRegion, ...] = Field(max_length=MAX_REGIONS)
     vertical_rules: tuple[float, ...] = Field(default=(), max_length=128)
     horizontal_rules: tuple[float, ...] = Field(default=(), max_length=64)
+    header_vertical_rules: tuple[float, ...] = Field(default=(), max_length=128)
     diagnostics: tuple[str, ...] = ()
     detection_operations: int = Field(ge=0, le=MAX_OPERATIONS)
 
@@ -56,7 +57,7 @@ class BlockPage(ContractModel):
                 raise ValueError('S2B_PIXEL_COORDINATES')
         if any(w.region_id is not None and w.region_id not in ids for w in self.words):
             raise ValueError('S2B_UNKNOWN_WORD_REGION')
-        if any(not 0<=v<self.width for v in self.vertical_rules) or any(not 0<=v<self.height for v in self.horizontal_rules):
+        if any(not 0<=v<self.width for v in (*self.vertical_rules,*self.header_vertical_rules)) or any(not 0<=v<self.height for v in self.horizontal_rules):
             raise ValueError('S2B_RULE_COORDINATES')
         return self
 
