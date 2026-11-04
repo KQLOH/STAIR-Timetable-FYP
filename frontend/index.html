@@ -109,7 +109,7 @@
         <div class="top-actions">
           <span class="safe-pill"><svg>
               <use href="#i-shield" />
-            </svg>Calendar NOT AUTHORIZED</span>
+            </svg>Calendar preview only</span>
           <button class="button secondary" id="loadSampleTop">Try sample</button>
           <button class="button primary" id="newExtractionTop"><svg>
               <use href="#i-upload" />
@@ -256,6 +256,10 @@
             <small>PDF, PNG, JPG/JPEG · max 20 MiB</small>
           </section>
           <aside class="upload-tips">
+            <h3>Read your timetable</h3>
+            <p>For a colored weekly grid, use the recommended block reader.</p>
+            <label><input id="runBlockGridS2b" type="checkbox"> RT2 Block OCR · Recommended</label>
+            <details class="extraction-advanced"><summary>Advanced extraction settings</summary>
             <label for="extractionPipeline">Extraction pipeline</label>
             <select id="extractionPipeline">
               <option value="evidence">evidence — evidence only</option>
@@ -267,8 +271,8 @@
             <label><input id="runP1" type="checkbox" checked> Run constrained P1 development reconstruction</label>
             <label><input id="runLayoutAssociation" type="checkbox" checked> OCR layout association — ocr-layout-m52-v1 (provisional)</label>
             <label><input id="runRuledGridS2a" type="checkbox"> Opt in: word OCR + ruled grid — ocr-ruled-grid-s2a-v1 (application only; evidence pipeline)</label>
-            <label><input id="runBlockGridS2b" type="checkbox"> Recommended for colored timetable screenshots: RT2 block OCR — ocr-block-grid-s2b-v1 (application only; evidence pipeline)</label>
             <p>Select RT2 block OCR above for colored weekly grids, then upload or retry the file. M5.2 alone uses whole-image OCR. Uncheck layout options to retain the original m4-development-v1 comparison path. Layout links and partial fields do not grant verification or calendar approval.</p>
+            </details>
             <p class="eyebrow">For better results</p>
             <h3>A clean source helps</h3>
             <ul>
@@ -298,30 +302,23 @@
         <div class="review-toolbar">
           <div>
             <p class="eyebrow">Step 2 of 3</p>
-            <h2>Review extracted events</h2>
+            <h2>Review your timetable</h2>
             <p id="reviewSubtitle">Upload a timetable to begin.</p>
           </div>
           <div class="review-actions"><button class="button secondary" id="exportJson"><svg>
                 <use href="#i-download" />
-              </svg>Export JSON</button><button class="button primary" id="reviewToCalendar">Continue to calendar<svg>
+              </svg>Export JSON</button><button class="button primary" id="reviewToCalendar">Calendar preview<svg>
                 <use href="#i-chevron" />
               </svg></button></div>
         </div>
 
-        <section class="panel review-workflow" aria-labelledby="reviewWorkflowTitle">
-          <h3 id="reviewWorkflowTitle">Application review</h3>
-          <p id="reviewAuthorization" role="status">Public read-only mode. No trusted operator is enrolled. Application correction is separate from research Gold and calendar approval.</p>
-          <div class="review-workflow-actions">
-            <label>Current source candidate<select id="reviewPublicCandidate" aria-label="Current source candidate"></select></label>
-            <button class="button secondary" id="inspectCanonical" type="button" disabled>Inspect canonical details</button>
-            <button class="button secondary" id="loadReviewQueue" type="button">Open authorized queue</button>
-            <button class="button secondary" id="ingestReviewSource" type="button" disabled>Queue current source</button>
-            <button class="text-button" id="endReviewSession" type="button" disabled>End authorized review session</button>
-          </div>
-          <p id="reviewWorkflowStatus" role="status" aria-live="polite"></p>
-          <div id="reviewQueue" aria-label="Authorized review queue"></div>
-          <button class="text-button" id="moreReviewTasks" type="button" hidden>Next queue page</button>
-        </section>
+        <div class="review-summary" aria-label="Timetable extraction summary">
+          <div><span>Classes found</span><strong id="reviewFound">0</strong></div>
+          <div><span>Field-complete</span><strong id="reviewComplete">0</strong></div>
+          <div><span>Needs review</span><strong id="reviewNeedsReview">0</strong></div>
+          <div><span>Verified records</span><strong id="reviewVerified">0</strong></div>
+        </div>
+        <p class="review-notice">Extracted information still needs your attention. Field completeness is not verification. Calendar sync is unavailable.</p>
         <div class="review-layout empty-state-layout" id="reviewLayout">
           <section class="document-pane">
             <div class="pane-heading">
@@ -347,24 +344,28 @@
                 <p>Upload a timetable or load the sample.</p>
               </div>
             </div>
-            <section id="extractionEvidence" class="evidence-panel" aria-label="Source evidence and pipeline diagnostics"></section>
+            <section id="sourceInspection" class="source-inspection" aria-label="Selected class source inspection" hidden></section>
+            <details class="source-advanced"><summary>Advanced technical details</summary>
+              <section id="extractionEvidence" class="evidence-panel" aria-label="Source evidence and pipeline diagnostics"></section>
+            </details>
           </section>
 
           <section class="events-pane">
             <div class="filter-row">
-              <div class="segmented" id="eventFilters"><button class="active" data-filter="all">All <span
-                    id="filterAll">0</span></button><button data-filter="accepted">Complete candidates <span
-                    id="filterReady">0</span></button><button data-filter="review">Incomplete / review <span
+              <div class="segmented" id="eventFilters"><button class="active" data-filter="all" aria-pressed="true">All classes <span
+                    id="filterAll">0</span></button><button data-filter="accepted" aria-pressed="false">Field-complete <span
+                    id="filterReady">0</span></button><button data-filter="review" aria-pressed="false">Needs review <span
                     id="filterReview">0</span></button></div>
               <label class="search-box"><svg>
                   <use href="#i-search" />
-                </svg><input id="eventSearch" type="search" placeholder="Search events"></label>
+                </svg><input id="eventSearch" type="search" placeholder="Course, lecturer or venue" aria-label="Search classes"></label>
             </div>
-            <div class="bulk-row"><label><input type="checkbox" id="selectAll"><span>Select all visible</span></label>
+            <div class="review-sort"><span id="visibleClassCount" role="status"></span><label>Sort by <select id="eventSort"><option value="time">Day and time</option><option value="course">Course code</option></select></label></div>
+            <div class="bulk-row" id="demoBulkControls" hidden><label><input type="checkbox" id="selectAll"><span>Select all visible</span></label>
               <div><button class="text-button positive" id="approveSelected">Mark demo reviewed</button><button
                   class="text-button danger" id="deleteSelected">Delete</button></div>
             </div>
-            <p id="reviewBoundary">Read-only candidate inspection. Trusted-host corrections unavailable; M5 ACCEPT disabled.</p>
+            <p id="reviewBoundary">Read-only preview. Corrections require an authorized review session.</p>
             <div class="event-list" id="eventList">
               <div class="empty-list">
                 <p>No extracted events yet.</p>
@@ -372,17 +373,32 @@
             </div>
           </section>
         </div>
+        <details class="panel review-workflow" aria-labelledby="reviewWorkflowTitle">
+          <summary id="reviewWorkflowTitle">Advanced review workspace</summary>
+          <p id="reviewAuthorization" role="status">Public read-only mode. No trusted operator is enrolled. Application correction is separate from research Gold and calendar approval.</p>
+          <div class="review-workflow-actions">
+            <label>Current source candidate<select id="reviewPublicCandidate" aria-label="Current source candidate"></select></label>
+            <button class="button secondary" id="inspectCanonical" type="button" disabled>Inspect canonical details</button>
+            <button class="button secondary" id="loadReviewQueue" type="button">Open authorized queue</button>
+            <button class="button secondary" id="ingestReviewSource" type="button" disabled>Queue current source</button>
+            <button class="text-button" id="endReviewSession" type="button" disabled>End authorized review session</button>
+          </div>
+          <p id="reviewWorkflowStatus" role="status" aria-live="polite"></p>
+          <div id="reviewQueue" aria-label="Authorized review queue"></div>
+          <button class="text-button" id="moreReviewTasks" type="button" hidden>Next queue page</button>
+        </details>
       </section>
 
       <section class="view" id="view-calendar">
+        <details class="calendar-limitations"><summary>Calendar capabilities and limitations</summary><p>Calendar NOT AUTHORIZED. Legacy READY and Approve labels are display-only. The TEST_ONLY workflow requires an approved host. External calendar synchronization remains unavailable.</p></details>
         <div class="section-intro calendar-intro">
           <div>
             <p class="eyebrow">Step 3 of 3</p>
-            <h2>Demo calendar display — NOT AUTHORIZED</h2>
-            <p>Legacy READY and Approve labels are display-only. The separate TEST_ONLY workflow requires an approved host. External calendar synchronization remains unavailable.</p>
+            <h2>Calendar preview</h2>
+            <p>Explore your extracted timetable. This preview does not approve events or sync them to a calendar.</p>
           </div><span class="sandbox-badge"><svg>
               <use href="#i-shield" />
-            </svg>Demo / not authorized</span>
+            </svg>Preview only</span>
         </div>
         <section class="panel sandbox-workflow" aria-labelledby="sandboxWorkflowTitle" id="sandboxWorkflow">
           <p class="eyebrow">TEST_ONLY · local synthetic calendar</p>
@@ -676,6 +692,11 @@
   <script src="./js/review.js" defer></script>
   <script src="./js/sandbox.js" defer></script>
   <script src="./js/app.js" defer></script>
+<dialog id="sourceZoom" class="source-zoom" aria-labelledby="sourceZoomTitle">
+    <header><h2 id="sourceZoomTitle">Original timetable</h2><button id="closeSourceZoom" type="button" class="button secondary">Close</button></header>
+    <label>Zoom <input id="sourceZoomScale" type="range" min="100" max="300" value="100" step="25"></label>
+    <div id="sourceZoomContent"></div>
+  </dialog>
 </body>
 
 </html>
