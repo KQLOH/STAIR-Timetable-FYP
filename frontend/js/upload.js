@@ -406,9 +406,13 @@
         return match ? `${Number(match[1])%12 || 12}:${match[2]} ${Number(match[1])<12?'AM':'PM'}` : 'Time not confirmed';
     }
     function eventRegions(event,result) {
-        const ids=new Set(event.revision.observations.flatMap(o=>o.evidence_ids));
-        return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>
+        const observations=event.revision.observations;
+        const regionsFor=ids=>(result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>
             page.words.some(w=>w.region_id===r.region_id && ids.has(w.evidence_id))).map(region=>({page,region})));
+        // A spacing witness from another class is supporting provenance, not
+        // ownership of that class's image. Prefer the course anchor's region.
+        const anchors=regionsFor(new Set(observations.filter(o=>o.field_name==='course_code').flatMap(o=>o.evidence_ids)));
+        return anchors.length ? anchors : regionsFor(new Set(observations.flatMap(o=>o.evidence_ids)));
     }
     function reference(id) {
         const row=node('div',null,'reference-row');const code=node('code',id.length>28?id.slice(0,14)+'…'+id.slice(-10):id);

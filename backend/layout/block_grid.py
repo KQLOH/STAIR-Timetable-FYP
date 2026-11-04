@@ -23,7 +23,7 @@ from backend.layout.service import relations
 from backend.layout.block_models import PROFILE, BlockEvidence, MAX_OPERATIONS
 from backend.layout.block_capture import DETECTION_CONFIG
 
-CONFIG={'profile_id':PROFILE,'version':'s2b.rt2.1','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
+CONFIG={'profile_id':PROFILE,'version':'s2b.rt2.2','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
     'family':'axis-aligned-colored-blocks-day-date-rows-two-clock-rows',
     'detection':DETECTION_CONFIG,'max_groups':40,'max_operations':MAX_OPERATIONS,
     'temporal_authority':'own explicit AM/PM range, explicit header AM/PM, or printed 24-hour statement',
@@ -160,10 +160,10 @@ def field_refs(node,span,words):
         'transformations':node.transformations+(PROFILE,'exact-source-word-ranges')})
 
 
-def _field_node(packet,span,words,field,raw,shared=False,start=None):
+def _field_node(packet,span,words,field,raw,shared=False,start=None,value=None):
     start=span.raw_text.find(raw) if start is None else start
     if start<0:raise ValueError('S2B_FIELD_SOURCE_RANGE')
-    return field_refs(_node(packet.source,span,field,raw,start,start+len(raw),Context(),shared),span,[w for line in _lines(words) for w in line])
+    return field_refs(_node(packet.source,span,field,raw,start,start+len(raw),Context(),shared,value=value),span,[w for line in _lines(words) for w in line])
 
 
 def _unresolved(packet,span,words,field,raw,reason):
@@ -187,6 +187,71 @@ def select_region_words(words):
     if not MARKER.search(text) and len(codes)==1 and match and re.sub(r'\s','',codes[0].group()).upper()==re.sub(r'\s','',match[1]).upper():
         return other[0]+[w for line in lines[1:] for w in line],['TYPE_RECOVERED_FROM_ALTERNATE_CROP_OCR']
     return primary,[]
+
+
+# Four-line parsing is application-only and requires source geometry and explicit times.
+def four_line_shape(words):
+    lines=_lines(words)
+    if len(lines)!=4:return None
+    boxes=[_box(line) for line in lines]
+    if any(a.y1>b.y0 for a,b in zip(boxes,boxes[1:])):return None
+    texts=[' '.join(w.text.strip() for w in line) for line in lines]
+    marker=MARKER.fullmatch(texts[0]);interval=TIME_RE.fullmatch(texts[3])
+    if not marker or not interval:return None
+    if not all(re.search(r'[AP]\.?M\.?',interval[i],re.I) for i in (1,2)):return None
+    times=[normalize_time(interval[i]) for i in (1,2)]
+    if not all(times) or times[0]>=times[1]:return None
+    venue=' '.join(texts[1].split()).upper()
+    compact=re.sub(r'\s+','',venue)
+    # A short room code, not arbitrary prose, a role label or another course.
+    if not re.fullmatch(r'(?:[A-Z]{3}|[A-Z]{2,4} [A-Z]|[A-Z]{1,4}\s*\d{1,4}\s*[A-Z]?)',venue):return None
+    if compact in {'TBA','TBD','UNKNOWN'} or re.fullmatch(r'[A-Z]{2,}\d{4}[A-Z]?',compact):return None
+    if compact==re.sub(r'\s+','',marker[1]).upper():return None
+    if ROLE_LABEL.search(texts[1]) or ROLE_LABEL.search(texts[2]):return None
+    # Two or more name tokens; numerical room/course identifiers cannot be staff.
+    if not re.fullmatch(r"[^\W\d_][^\W\d_.'’-]*(?:\s+[^\W\d_][^\W\d_.'’-]*){1,5}",texts[2],re.UNICODE):return None
+    return lines,texts
+
+
+def four_line_fields(packet,page,region,words,span):
+    shape=four_line_shape(words)
+    if shape is None or region.boundary_status!='RECTANGULAR':return None
+    axis,outside=header_axis(page)
+    if not axis['supported'] or not _geometry_span(region,axis):return None
+    _,context,issues=_day_context(packet,page,region,outside,axis)
+    if issues or not all(any(n.field==f and n.state==FieldState.PRESENT for n in context) for f in ('date','day_of_week')):return None
+    lines,texts=shape
+    venue=' '.join(texts[1].split()).upper();witnesses=[]
+    if re.search(r'\d',venue):venue=re.sub(r'\s+','',venue)
+    elif ' ' not in venue:
+        # Never assume a particular room prefix. Learn a split only from an
+        # explicit spaced reading in another valid four-line crop on this page.
+        variants=[]
+        for other in page.regions:
+            if other.boundary_status!='RECTANGULAR':continue
+            routes={w.capture_route for w in page.words if w.region_id==other.region_id}
+            for route in sorted(routes):
+                raw=[w for w in page.words if w.region_id==other.region_id and w.capture_route==route]
+                observed=four_line_shape(raw)
+                if observed:
+                    second=observed[1][1].upper()
+                    m=re.fullmatch(r'([A-Z]{2,4}) ([A-Z])',second)
+                    if m and venue.startswith(m[1]) and len(venue)==len(m[1])+1:
+                        variants.append((m[1]+' '+venue[-1],observed[0][1]))
+        if len({value for value,_ in variants})==1:
+            venue=variants[0][0];witnesses=variants[0][1]
+    lecturer=' '.join(token if any(c.isupper() for c in token[1:]) and not token.isupper() else token.title() for token in texts[2].split())
+    nodes=[]
+    for field,index,value in [('location',1,venue),('lecturer',2,lecturer)]:
+        start=sum(len(t)+1 for t in texts[:index])
+        node=_field_node(packet,span,words,field,texts[index],start=start,value=value)
+        transforms=('s2b-four-line-course-venue-lecturer-explicit-time-v1',
+                    'venue-code-uppercase-and-source-supported-spacing' if field=='location' else 'lecturer-name-case-normalization')
+        if field=='location' and witnesses:
+            node=node.model_copy(update={'evidence_ids':tuple(sorted(set(node.evidence_ids)|{w.evidence_id for w in witnesses}))})
+            transforms+=('venue-spacing-prefix-witness:'+','.join(w.evidence_id for w in witnesses),)
+        nodes.append(node.model_copy(update={'transformations':node.transformations+transforms}))
+    return nodes
 
 
 def block_fields(packet,page,region,words):
@@ -242,6 +307,18 @@ def block_fields(packet,page,region,words):
         if index<len(lines) and index not in course_lines and not re.search(r'\d{1,2}:\d{2}|[AP]M\b|\b(?:group|section|cohort)\b',texts[index],re.I):
             nodes.append(_field_node(packet,span,words,'lecturer',texts[index]))
             nodes[-1]=nodes[-1].model_copy(update={'transformations':nodes[-1].transformations+('s2b-declared-template-line-after-venue',)})
+    positional=four_line_fields(packet,page,region,words,span)
+    if positional is not None:
+        nodes=[n for n in nodes if n.field not in {'location','lecturer','section','cohort_id','course_name'}]+positional
+        issues=[code for code in issues if code not in {'BARE_IDENTIFIER_ROLE_UNRESOLVED','COMPETING_BARE_VENUE_LINES'}]
+        issues.append('FOUR_LINE_VENUE_LECTURER_SCHEMA')
+    elif len(texts) in {3,4} and MARKER.fullmatch(texts[0]) and TIME_RE.fullmatch(texts[-1]) and not any(ROLE_LABEL.search(t) for t in texts[1:-1]):
+        # A missing/reordered role line is not permission to relabel a name or
+        # use a room from an unconfirmed position. Keep raw evidence available.
+        nodes=[n for n in nodes if n.field not in {'location','lecturer','course_name','section','cohort_id'}]
+        for field in ('location','lecturer'):
+            nodes.append(_unresolved(packet,span,words,field,' '.join(texts[1:-1]),'four-line-role-layout-not-established'))
+        issues.append('FOUR_LINE_ROLE_LAYOUT_UNRESOLVED')
     # Unknown intervals are retained, rather than quietly becoming MISSING.
     if not any(n.field in {'start_time','end_time'} for n in nodes):
         possible=[t for t in texts if re.search(r'\b[AP]M\b|\btime\b|\?\?|unreadable',t,re.I)]
@@ -460,7 +537,7 @@ def block_graph(packet,supplement):
     graph=base.model_copy(update={'evidence':tuple(evidence[k] for k in sorted(evidence)),
         'groups':tuple(sorted(groups,key=lambda g:g.group_id)),
         'diagnostics':base.diagnostics+('S2B_APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',)})
-    layout={'profile':PROFILE,'version':'s2b.rt2.1','config_digest':CONFIG_HASH,'regions':details,'issues':issues,
+    layout={'profile':PROFILE,'version':'s2b.rt2.2','config_digest':CONFIG_HASH,'regions':details,'issues':issues,
         'association_operations':operations,'registered_method':False,
         'trust':'CALLER_SUPPLIED_PIXEL_AND_OCR_EVIDENCE_NOT_AUTHENTICATED'}
     return graph,settings,layout

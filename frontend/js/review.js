@@ -166,10 +166,36 @@
             const key=packet ? sourceKey(packet.source)+':'+packet.events.map(e=>e.revision.revision_id).join(':') : null;
             if(this.publicKey!==key) {
                 this.publicKey=key;const select=el('reviewPublicCandidate');
-                if(select) {select.replaceChildren();for(const event of packet?.events || []) {const option=node('option',`${event.revision.content.course_code || 'Unresolved course'} · ${event.revision.content.date || 'date unresolved'} · revision ${event.revision.version}`);option.value=event.candidate_id;select.append(option);}}
+                if(select) {
+                    const previous=select.value;select.replaceChildren();
+                    for(const event of packet?.events || []) {
+                        const c=event.revision.content;
+                        const option=node('option',`${c.course_code || 'Unresolved course'} | ${c.date || 'Date not confirmed'} | ${c.start_time || '?'}–${c.end_time || '?'} | Revision ${event.revision.version}`);
+                        option.value=event.candidate_id;select.append(option);
+                    }
+                    select.value=packet?.events.some(e=>e.candidate_id===previous)?previous:(packet?.events[0]?.candidate_id || '');
+                    this.publicChoices(packet,select);
+                }
             }
             if(el('inspectCanonical'))el('inspectCanonical').disabled=!packet?.events?.length;
             this.controls();
+        }
+        publicChoices(packet,select) {
+            const list=el('reviewCandidateChoices');if(!list)return;
+            list.replaceChildren();
+            if(!packet?.events.length){list.append(node('p','Upload a timetable to inspect its class records.'));return;}
+            for(const event of packet.events) {
+                const c=event.revision.content,row=node('label',null,'review-candidate-choice');
+                const radio=node('input');radio.type='radio';radio.name='public-review-candidate';radio.value=event.candidate_id;
+                radio.checked=select.value===event.candidate_id;
+                radio.setAttribute('aria-label',`${c.course_code || 'Unresolved course'}, ${c.date || 'Date not confirmed'}, ${c.start_time || 'Time not confirmed'}, revision ${event.revision.version}`);
+                radio.addEventListener('change',()=>{if(radio.checked)select.value=event.candidate_id;});
+                const text=node('span',null,'review-choice-copy');
+                text.append(node('strong',`${c.course_code || 'Unresolved course'} · ${c.session_type || 'Type not confirmed'}`),
+                    node('span',`${c.date || 'Date not confirmed'} · ${c.start_time || '?'}–${c.end_time || '?'}`),
+                    node('small',`Venue: ${c.location || 'Not confirmed'} · Revision ${event.revision.version}`));
+                row.append(radio,text);list.append(row);
+            }
         }
         inspectPublic() {
             const packet=this.getSource()?.packet;
@@ -195,7 +221,10 @@
                 if(!queue.tasks.length)out.append(node('p','No tasks are visible within this assignment and source scope.'));
                 for(const task of queue.tasks) {
                     const c=task.current_event?.revision.content || {},missing=task.current_event?.revision.observations.filter(o=>o.state!=='PRESENT').map(o=>label(o.field_name)) || [];
-                    const button=node('button',`${c.course_code || 'Unresolved course'} · ${c.date || 'date unresolved'} / ${c.day_of_week || 'weekday unresolved'} · ${c.start_time || '?'}–${c.end_time || '?'} · ${c.session_type || 'type unresolved'} · ${c.location || 'venue unresolved'} · section ${c.section || '?'} / cohort ${c.cohort_id || '?'} · ${task.state} · extraction ${task.current_event?.extraction_status || 'unavailable'} · missing/uncertain: ${missing.join(', ') || 'none by field presence'} · source ${task.current_event?.revision.source_document_id || 'no candidate'}`,'button secondary');
+                    const button=node('button',null,'button secondary review-queue-choice');
+                    button.append(node('strong',`${c.course_code || 'Unresolved course'} · ${c.session_type || 'Type not confirmed'}`),
+                        node('span',`${c.date || 'Date not confirmed'} · ${c.start_time || '?'}–${c.end_time || '?'} · Venue: ${c.location || 'Not confirmed'}`),
+                        node('small',`Revision ${task.current_event?.revision.version || '?'} · ${task.state} · Missing or uncertain: ${missing.join(', ') || 'none by field presence'}`));
                     button.type='button';button.addEventListener('click',()=>this.selectTask(task.task_id));out.append(button);
                 }
                 this.nextOffset=queue.next_offset;el('moreReviewTasks').hidden=queue.next_offset==null;
