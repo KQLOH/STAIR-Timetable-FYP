@@ -127,7 +127,7 @@
             } catch (error) { if (timedOut) throw new Error("Request timed out; no success assumed. Retry explicitly."); throw error; }
             finally { clearTimeout(timer); signal.removeEventListener("abort", onAbort); }
         }
-        async run(file, pipeline, {reconstruct = true, layout = false, ruledGrid = false, blockGrid = false} = {}) {
+        async run(file, pipeline, {reconstruct = true, layout = false, ruledGrid = false, blockGrid = false, contextCorrection = false} = {}) {
             this.reset();
             const sequence = this.sequence;
             const controller = new AbortController(); this.abortController = controller;
@@ -152,6 +152,7 @@
                 if (selectedLayoutProfile) {
                     requireValue(extracted.layout_profile === selectedLayoutProfile && extracted.layout_evidence?.schema_version === (blockGrid ? "s2b.1" : "s2a.1"), "Missing versioned supplementary layout evidence.");
                     result.layoutEvidence = extracted.layout_evidence;
+                    if(blockGrid && contextCorrection)result.layoutEvidence={...result.layoutEvidence,correction_mode:'context-v1'};
                 }
                 if (sequence !== this.sequence) return result;
                 result.stages.extraction = result.extraction.events.length ? "CANDIDATES_RETURNED" : "NO_CANDIDATES";
@@ -177,7 +178,7 @@
                 if (result.reconstruction) {
                     try {
                         const response = await this.request(blockGrid ? "/api/layout/s2b/assess" : ruledGrid ? "/api/layout/s2a/assess" : result.reconstructionProfile === "ocr-layout-m52-v1" ? "/api/layout/assess" : "/api/policy/assess", {method:"POST", headers:{"Content-Type":"application/json"},
-                            body:assessmentBody(result.extraction, result.reconstruction, result.layoutEvidence)}, signal);
+                            body:blockGrid ? JSON.stringify({source_packet:result.extraction,layout_evidence:result.layoutEvidence,reconstruction:{canonical_digest:result.reconstruction.canonical_digest}}) : assessmentBody(result.extraction, result.reconstruction, result.layoutEvidence)}, signal);
                         if (sequence !== this.sequence) return result;
                         const output = result.reconstruction.canonical_output;
                         result.policy = validatePolicy(response, output ? [...output.packet.events, ...output.unresolved_candidates] : []);
@@ -192,6 +193,7 @@
                     reconstruction_status:output?.status || (result.stages.reconstruction === "EXECUTION_ABORTED" ? "EXECUTION_ABORTED" : "NOT_PROVIDED"), context:{}, assessments:[]};
                 // Public M5 decisions omit complete findings; never manufacture a full M6 assessment from them.
                 try {
+                    if(bundle.packet.evidence.length>512)throw new Error('Calendar diagnostic evidence limit (512 spans) exceeded; calendar remains blocked.');
                     const eligibility = await this.request("/api/calendar/v1/eligibility", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(bundle)}, signal);
                     if (sequence !== this.sequence) return result;
                     requireValue(eligibility.policy_status === "BLOCKED" && eligibility.external_calendar === false && Array.isArray(eligibility.events) &&
@@ -407,6 +409,11 @@
     }
     function eventRegions(event,result) {
         const observations=event.revision.observations;
+        const observedIds=new Set(observations.flatMap(o=>o.evidence_ids));
+        const sourceOwners=new Set((result.reconstruction?.canonical_output?.packet?.evidence || []).filter(s=>observedIds.has(s.evidence_id) && s.locator?.startsWith('region:')).map(s=>s.locator.slice('region:'.length)));
+        if(sourceOwners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>sourceOwners.has(r.region_id)).map(region=>({page,region})));
+        const owners=new Set(observations.flatMap(o=>(o.transformations || []).filter(t=>t.startsWith('rt4-owner-region:')).map(t=>t.slice('rt4-owner-region:'.length))));
+        if(owners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>owners.has(r.region_id)).map(region=>({page,region})));
         const regionsFor=ids=>(result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>
             page.words.some(w=>w.region_id===r.region_id && ids.has(w.evidence_id))).map(region=>({page,region})));
         // A spacing witness from another class is supporting provenance, not
@@ -464,8 +471,25 @@
     }
     function renderCards(events,result,container) {
         container.replaceChildren();
-        if(!events.length) {container.append(node('div',result.busy?'Reading your timetable…':result.stages?.extraction==='FAILED'?
-            'We couldn’t read this file. Try again or choose a clearer image.':'No classes match this view. Clear your search or choose All classes.','empty-list'));return;}
+        if(!events.length) {
+            const hidden=displayedEvents(result).length>0;
+            const failed=['FAILED','EXECUTION_ABORTED'].some(status=>Object.values(result.stages || {}).includes(status));
+            const message=result.busy?'Reading your timetable…':failed?
+                'We couldn’t read this file. Try again or choose a clearer image.':hidden?
+                'No classes match this view. Clear your search or choose All classes.':
+                'No classes were detected in this image.';
+            const empty=node('div',null,'empty-list');empty.append(node('p',message));
+            if(!result.busy && !hidden) {
+                empty.append(node('p',failed?'See processing details for the failed stage.':
+                    'Check that class text and day headers are visible. Try a clearer image or inspect processing details.'));
+                const retry=node('button','Retry','secondary-button');retry.type='button';
+                retry.disabled=!result.file;retry.onclick=()=>global.document.getElementById('retryUpload')?.click();empty.append(retry);
+                empty.append(details('Processing details',{stages:result.stages || {},diagnostics:result.diagnostics || [],
+                    regions:result.layoutEvidence?.pages?.reduce((n,p)=>n+p.regions.length,0) || 0,
+                    reconstruction:result.reconstruction?.canonical_output?.layout?.issues || []}));
+            }
+            container.append(empty);return;
+        }
         for(const view of events) {
             const event=view.canonical,c=event.revision.content;
             const card=node('article',null,'event-card class-card');card.dataset.candidateId=event.candidate_id;
@@ -487,11 +511,30 @@
                     }
                 }
             }
+            const regionDetails=result.reconstruction?.canonical_output?.layout?.regions || [];
+            if(eventRegions(event,result).some(({region})=>regionDetails.some(d=>d.region_id===region.region_id && d.issues?.includes('RED_REGION_REQUIRES_CLASH_OR_HOLIDAY_REVIEW'))))
+                facts.append(node('p','Red class block — check for a clash or public holiday.','uncertain-field'));
+            const corrections=eventRegions(event,result).flatMap(({region})=>regionDetails.find(d=>d.region_id===region.region_id)?.ocr_corrections || []);
+            if(corrections.some(c=>c.status==='AMBIGUOUS'))facts.append(node('p','Possible OCR error — please check','uncertain-field'));
             body.append(facts);
             const footer=node('div',null,'class-footer');footer.append(status,node('span',verified(event)?'Verification recorded':'Not yet verified','verification-note'));
             const inspect=node('button','View source','text-button');inspect.type='button';inspect.addEventListener('click',()=>inspectEvent(event,result,inspect));footer.append(inspect);body.append(footer);
             const technical=node('details',null,'class-technical');technical.append(node('summary','View OCR details'));
             for(const {page,region} of eventRegions(event,result))technical.append(details('Original OCR text and confidence',regionReadings(page,region)));
+            if(corrections.length) {
+                const correctionDetails=node('details');correctionDetails.append(node('summary','OCR character corrections'));
+                for(const correction of corrections) {
+                    const item=node('div',null,'compact-evidence');
+                    item.append(node('p','Original OCR: '+correction.original));
+                    const suggestions=correction.suggested || (correction.candidates || []).map(c=>c.value).join(' / ') || 'Not established';
+                    item.append(node('p','Suggested: '+suggestions));
+                    const reason=correction.rule==='independent-format-numeric-position'?'Confusable character in an independently supported numeric position':
+                        correction.rule==='same-region-alternative-OCR'?'Supported by an alternative reading of the same source region':'Insufficient or competing source evidence — please check';
+                    item.append(node('p','Reason: '+reason),node('p',correction.status==='SUPPORTED'?'Source-supported interpretation; not verified':'Ambiguous; human review required'));
+                    item.append(details('Correction evidence',correction));correctionDetails.append(item);
+                }
+                technical.append(correctionDetails);
+            }
             const refs=node('details');refs.append(node('summary','View source evidence'));
             const spans=sourceSpans(result),ids=[...new Set(event.revision.observations.flatMap(o=>o.evidence_ids))];
             for(const id of ids) {

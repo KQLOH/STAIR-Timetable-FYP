@@ -28,7 +28,7 @@ class ColorRegion(ContractModel):
     fill_coverage: float = Field(ge=0, le=1)
     boundary_status: Literal['RECTANGULAR','AMBIGUOUS_COMPONENT'] = 'RECTANGULAR'
     inner_margin_pixels: int = Field(default=0,ge=0)
-    geometry_method: Literal['quantized-color-components-s2b-v1'] = 'quantized-color-components-s2b-v1'
+    geometry_method: Literal['quantized-color-components-s2b-v1','chromatic-components-s2b-v2'] = 'quantized-color-components-s2b-v1'
 
 
 class BlockPage(ContractModel):
@@ -65,6 +65,7 @@ class BlockPage(ContractModel):
 class BlockEvidence(ContractModel):
     profile: Literal['ocr-block-grid-s2b-v1'] = PROFILE
     schema_version: Literal['s2b.1'] = 's2b.1'
+    correction_mode: Literal['off','context-v1'] = 'off'
     source_document_id: str
     content_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
     pages: tuple[BlockPage, ...] = Field(min_length=1, max_length=MAX_PAGES)

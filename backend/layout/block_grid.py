@@ -23,7 +23,7 @@ from backend.layout.service import relations
 from backend.layout.block_models import PROFILE, BlockEvidence, MAX_OPERATIONS
 from backend.layout.block_capture import DETECTION_CONFIG
 
-CONFIG={'profile_id':PROFILE,'version':'s2b.rt2.2','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
+CONFIG={'profile_id':PROFILE,'version':'s2b.rt3.1','status':'APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',
     'family':'axis-aligned-colored-blocks-day-date-rows-two-clock-rows',
     'detection':DETECTION_CONFIG,'max_groups':40,'max_operations':MAX_OPERATIONS,
     'temporal_authority':'own explicit AM/PM range, explicit header AM/PM, or printed 24-hour statement',
@@ -31,8 +31,8 @@ CONFIG={'profile_id':PROFILE,'version':'s2b.rt2.2','status':'APPLICATION_ONLY_SY
 CONFIG_HASH=digest(CONFIG)
 CLOCK=re.compile(r'^(\d{1,2}):(\d{2})\s*([AP]M)?$',re.I)
 CLOCK_SHAPE=re.compile(r'^(?:\d{1,2}|\?{2})[:.](?:\d{2}|\?{2})\s*(?:[AP]M)?$',re.I)
-MARKER=re.compile(r'\b([A-Z]{2,}\s*\d{3,4}[A-Z]?)\s*[\(\[]\s*([LPT])\s*[\)\]}]',re.I)
-TYPE_MARKER=re.compile(r'[\(\[]\s*([LPT])\s*[\)\]}]',re.I)
+MARKER=re.compile(r'\b([A-Z]{2,}[-\s]*\d{3,4}[A-Z]?)\s*[\(\[\{]\s*([LPT])\s*[\)\]}]',re.I)
+TYPE_MARKER=re.compile(r'[\(\[\{]\s*([LPT])\s*[\)\]}]',re.I)
 ROLE_LABEL=re.compile(r'\b(?:room|venue|location|lecturer|instructor|teacher|staff|group|section|cohort)\b',re.I)
 
 
@@ -92,7 +92,7 @@ def header_axis(page):
     outside=[w for w in page.words if w.region_id is None and not any(_inside(w,r) for r in page.regions)]
     preferred=[w for w in outside if w.capture_route=='s2b-axis-crop-ocr-v1']
     clocks=[w for w in (preferred or outside) if CLOCK_SHAPE.fullmatch(w.text.strip())]
-    top=min((r.bbox.y0 for r in page.regions),default=page.height)
+    top=min((r.bbox.y0 for r in page.regions if any(re.search(r'[A-Z]{2,}[- ]*\d{3,4}',w.text,re.I) for w in page.words if w.region_id==r.region_id)),default=page.height)
     clocks=[w for w in clocks if w.bbox.y1<=top]
     bands=[]
     for w in sorted(clocks,key=lambda w:(w.bbox.y0,w.bbox.x0)):
@@ -209,20 +209,69 @@ def four_line_shape(words):
     if compact==re.sub(r'\s+','',marker[1]).upper():return None
     if ROLE_LABEL.search(texts[1]) or ROLE_LABEL.search(texts[2]):return None
     # Two or more name tokens; numerical room/course identifiers cannot be staff.
-    if not re.fullmatch(r"[^\W\d_][^\W\d_.'’-]*(?:\s+[^\W\d_][^\W\d_.'’-]*){1,5}",texts[2],re.UNICODE):return None
+    if not re.fullmatch(r"[^\W\d_][^\W\d_.'\u2019-]*(?:\s+[^\W\d_][^\W\d_.'\u2019-]*){1,5}",texts[2],re.UNICODE):return None
     return lines,texts
 
 
+def wrapped_shape(words):
+    """Four logical fields with source-observed line wrapping, not line repair."""
+    lines=_lines(words)
+    if not 4<=len(lines)<=12:return None
+    boxes=[_box(line) for line in lines]
+    if any(a.y1>b.y0 for a,b in zip(boxes,boxes[1:])):return None
+    texts=[' '.join(w.text.strip() for w in line) for line in lines]
+    count=1 if MARKER.fullmatch(texts[0]) else 2
+    if not MARKER.fullmatch(' '.join(texts[:count])):return None
+    # Exactly one venue line, followed by one or more staff-name lines, and a
+    # terminal explicit range. Trailing notes cannot be consumed as a name.
+    venue=texts[count].upper()
+    if ROLE_LABEL.search(venue):return None
+    if not re.fullmatch(r'(?:[A-Z]{2,4}(?: [A-Z]{1,4})?(?: \d{1,3})?|[A-Z]{1,4}\s*\d{1,4}\s*[A-Z]?|[A-Z]{2,}(?: [A-Z]{2,}){1,3} \d{1,3})',venue,re.I):return None
+    compact=re.sub(r'\s+','',venue)
+    if compact in {'TBA','TBD','UNKNOWN'} or re.fullmatch(r'[A-Z]{2,}\d{4}[A-Z]?',compact):return None
+    for end in range(count+2,len(lines)):
+        staff=' '.join(texts[count+1:end]);interval=' '.join(texts[end:])
+        match=TIME_RE.fullmatch(interval)
+        if not match or not all(re.search(r'[AP]\.?M\.?',match[i],re.I) for i in (1,2)):continue
+        times=[normalize_time(match[i]) for i in (1,2)]
+        if not all(times) or times[0]>=times[1]:continue
+        if ROLE_LABEL.search(staff) or not re.fullmatch(r"[^\W\d_][^\W\d_.'\u2019-]*(?:\s+[^\W\d_][^\W\d_.'\u2019-]*){0,7}",staff,re.UNICODE):continue
+        logical=[sum(lines[:count],[]),lines[count],sum(lines[count+1:end],[]),sum(lines[end:],[])]
+        return logical,[' '.join(w.text.strip() for w in line) for line in logical]
+    return None
+
+
+def explicit_boundary_clocks(region,page,axis):
+    """Measured hour edges or measured half-hour subdivisions; never extrapolate."""
+    tolerance=max(3,min((c['upper'].bbox.y1-c['upper'].bbox.y0 for c in axis['columns']),default=6)*.5)
+    result=[]
+    for edge in (region.bbox.x0,region.bbox.x1):
+        options=set()
+        for col in axis['columns']:
+            lo,hi=col['left'],col['right']
+            if lo is None or hi is None:continue
+            a,b=CLOCK.fullmatch(col['upper'].text),CLOCK.fullmatch(col['lower'].text)
+            if not a or not b:continue
+            start=int(a[1])%12*60+int(a[2]);end=int(b[1])%12*60+int(b[2]);duration=(end-start)%720
+            for x,minutes in [(lo,start),(hi,end)]:
+                if abs(edge-x)<=tolerance:options.add(minutes)
+            middle=(lo+hi)/2
+            if duration==60 and abs(edge-middle)<=tolerance:options.add((start+30)%720)
+        if len(options)!=1:return None
+        result.append(options.pop())
+    return result
+
+
 def four_line_fields(packet,page,region,words,span):
-    shape=four_line_shape(words)
+    shape=four_line_shape(words) or wrapped_shape(words)
     if shape is None or region.boundary_status!='RECTANGULAR':return None
     axis,outside=header_axis(page)
-    if not axis['supported'] or not _geometry_span(region,axis):return None
+    if not axis['supported'] or not (_geometry_span(region,axis) or explicit_boundary_clocks(region,page,axis)):return None
     _,context,issues=_day_context(packet,page,region,outside,axis)
     if issues or not all(any(n.field==f and n.state==FieldState.PRESENT for n in context) for f in ('date','day_of_week')):return None
     lines,texts=shape
     venue=' '.join(texts[1].split()).upper();witnesses=[]
-    if re.search(r'\d',venue):venue=re.sub(r'\s+','',venue)
+    if re.fullmatch(r'[A-Z]{1,4}\s*\d{1,4}\s*[A-Z]?',venue):venue=re.sub(r'\s+','',venue)
     elif ' ' not in venue:
         # Never assume a particular room prefix. Learn a split only from an
         # explicit spaced reading in another valid four-line crop on this page.
@@ -232,7 +281,7 @@ def four_line_fields(packet,page,region,words,span):
             routes={w.capture_route for w in page.words if w.region_id==other.region_id}
             for route in sorted(routes):
                 raw=[w for w in page.words if w.region_id==other.region_id and w.capture_route==route]
-                observed=four_line_shape(raw)
+                observed=four_line_shape(raw) or wrapped_shape(raw)
                 if observed:
                     second=observed[1][1].upper()
                     m=re.fullmatch(r'([A-Z]{2,4}) ([A-Z])',second)
@@ -245,7 +294,7 @@ def four_line_fields(packet,page,region,words,span):
     for field,index,value in [('location',1,venue),('lecturer',2,lecturer)]:
         start=sum(len(t)+1 for t in texts[:index])
         node=_field_node(packet,span,words,field,texts[index],start=start,value=value)
-        transforms=('s2b-four-line-course-venue-lecturer-explicit-time-v1',
+        transforms=(('s2b-four-line-course-venue-lecturer-explicit-time-v1' if four_line_shape(words) else 's2b-wrapped-logical-fields-v1'),
                     'venue-code-uppercase-and-source-supported-spacing' if field=='location' else 'lecturer-name-case-normalization')
         if field=='location' and witnesses:
             node=node.model_copy(update={'evidence_ids':tuple(sorted(set(node.evidence_ids)|{w.evidence_id for w in witnesses}))})
@@ -270,7 +319,7 @@ def block_fields(packet,page,region,words):
     if markers:
         nodes=[n for n in nodes if n.field not in {'course_code','session_type'}]
         for m in markers:
-            nodes.append(_field_node(packet,span,words,'course_code',m[1],start=m.start(1)))
+            nodes.append(_field_node(packet,span,words,'course_code',m[1],start=m.start(1),value=re.sub(r'\s+','',m[1]).upper()))
             nodes.append(_field_node(packet,span,words,'session_type',m[2],start=m.start(2)))
     elif subject_matches(texts[0] if texts else ''):
         # A damaged type glyph must not turn a code-like room on another line
@@ -311,7 +360,7 @@ def block_fields(packet,page,region,words):
     if positional is not None:
         nodes=[n for n in nodes if n.field not in {'location','lecturer','section','cohort_id','course_name'}]+positional
         issues=[code for code in issues if code not in {'BARE_IDENTIFIER_ROLE_UNRESOLVED','COMPETING_BARE_VENUE_LINES'}]
-        issues.append('FOUR_LINE_VENUE_LECTURER_SCHEMA')
+        issues.append('FOUR_LINE_VENUE_LECTURER_SCHEMA' if four_line_shape(words) else 'WRAPPED_LOGICAL_FIELD_SCHEMA')
     elif len(texts) in {3,4} and MARKER.fullmatch(texts[0]) and TIME_RE.fullmatch(texts[-1]) and not any(ROLE_LABEL.search(t) for t in texts[1:-1]):
         # A missing/reordered role line is not permission to relabel a name or
         # use a room from an unconfirmed position. Keep raw evidence available.
@@ -428,7 +477,15 @@ def anchored_axis(page,axis):
 
 def associate_time(packet,page,region,span,words,nodes,axis,outside):
     occupied=_geometry_span(region,axis);derived=[];issues=[]
-    if not occupied:return nodes,derived,['BLOCK_HEADER_BOUNDARIES_UNRESOLVED']
+    if not occupied:
+        clocks=explicit_boundary_clocks(region,page,axis)
+        times=[next((n for n in nodes if n.field==f and n.state==FieldState.PRESENT),None) for f in ('start_time','end_time')]
+        if clocks and all(times):
+            if any((int(n.value[:2])%12*60+int(n.value[3:]))!=v for n,v in zip(times,clocks)):
+                nodes=[n.model_copy(update={'value':None,'state':FieldState.UNRESOLVED}) if n.field in {'start_time','end_time'} else n for n in nodes]
+                return nodes,derived,['PRINTED_TIME_GEOMETRY_CONFLICT']
+            return nodes,derived,['EXPLICIT_TIME_MEASURED_HALF_HOUR_BOUNDARIES']
+        return nodes,derived,['BLOCK_HEADER_BOUNDARIES_UNRESOLVED']
     upper,lower=occupied[0]['upper'],occupied[-1]['lower']
     starts=[n for n in nodes if n.field=='start_time' and n.state==FieldState.PRESENT]
     ends=[n for n in nodes if n.field=='end_time' and n.state==FieldState.PRESENT]
@@ -489,6 +546,8 @@ def block_graph(packet,supplement):
     groups=[];details=[];issues=[];operations=0
     for page in supplement.pages:
         axis,outside=header_axis(page)
+        from backend.layout.block_correction import page_witnesses, apply_corrections
+        witnesses=page_witnesses(page) if supplement.correction_mode=='context-v1' else {}
         issues.extend({'code':code,'page':page.page} for code in (*page.diagnostics,*axis['issues']))
         columns=[{'upper':c['upper'].text,'lower':c['lower'].text,'upper_word_id':c['upper'].evidence_id,
                   'lower_word_id':c['lower'].evidence_id,'left':c['left'],'right':c['right']} for c in axis['columns']]
@@ -502,7 +561,14 @@ def block_graph(packet,supplement):
                 detail['status']='REGION_WITHOUT_READABLE_WORDS';details.append(detail);continue
             words,ocr_issues=select_region_words(words)
             span,nodes,local_issues=block_fields(packet,page,region,words);local_issues.extend(ocr_issues);evidence[span.evidence_id]=span
+            key=region.pixel_color_key-1;red,green,blue=key//1024,(key//32)%32,key%32
+            if red>green and red>blue:
+                local_issues.append('RED_REGION_REQUIRES_CLASH_OR_HOLIDAY_REVIEW')
             detail['selected_word_ids']=[w.evidence_id for w in words]
+            if supplement.correction_mode=='context-v1':
+                nodes,corrections=apply_corrections(packet,page,region,words,span,nodes,axis,outside,witnesses)
+                detail['ocr_corrections']=corrections
+                local_issues.extend('OCR_CORRECTION_'+c['status'] for c in corrections)
             if 'COMPETING_CROP_TYPE_READINGS' in ocr_issues:
                 nodes=[n.model_copy(update={'value':None,'state':FieldState.UNRESOLVED,
                     'transformations':n.transformations+('competing-crop-type-readings',)}) if n.field=='session_type' else n for n in nodes]
@@ -537,8 +603,10 @@ def block_graph(packet,supplement):
     graph=base.model_copy(update={'evidence':tuple(evidence[k] for k in sorted(evidence)),
         'groups':tuple(sorted(groups,key=lambda g:g.group_id)),
         'diagnostics':base.diagnostics+('S2B_APPLICATION_ONLY_SYNTHETIC_DEVELOPMENT',)})
-    layout={'profile':PROFILE,'version':'s2b.rt2.2','config_digest':CONFIG_HASH,'regions':details,'issues':issues,
+    layout={'profile':PROFILE,'version':'s2b.rt3.1','config_digest':(CONFIG_HASH if supplement.correction_mode=='off' else digest({'base':CONFIG_HASH,'correction_mode':supplement.correction_mode,'correction_version':'rt4-context-v1'})),'regions':details,'issues':issues,
         'association_operations':operations,'registered_method':False,
+        'scope':'VISIBLE_CAPTURE_ONLY_COMPLETENESS_NOT_ESTABLISHED',
+        'correction_mode':supplement.correction_mode,'correction_version':'rt4-context-v1',
         'trust':'CALLER_SUPPLIED_PIXEL_AND_OCR_EVIDENCE_NOT_AUTHENTICATED'}
     return graph,settings,layout
 
@@ -572,7 +640,7 @@ def assess_blocks(packet,supplement,envelope,mode='constrained'):
     if c is None:raise ValueError('S2B_EXECUTION_ABORTED')
     events=tuple(CanonicalEvent.model_validate(e) for e in c['packet']['events']+c['unresolved_candidates'])
     findings=tuple(Finding.model_validate(f) for f in c['findings'])
-    run=BoundRun(json.dumps(envelope),digest({'packet':packet.model_dump(mode='json'),'config':CONFIG_HASH}),
+    run=BoundRun(json.dumps(envelope),digest({'packet':packet.model_dump(mode='json'),'config':c['layout']['config_digest']}),
         expected['canonical_digest'],packet.model_dump_json(),graph.model_dump_json(),mode,PROFILE,c['status'],
         c['base_score_digest'],tuple(mapping.items()),tuple(e.model_dump_json() for e in events),
         tuple(e['candidate_id'] for e in c['unresolved_candidates']),tuple((gid,comp['status']) for comp in c['components'] for gid in comp['group_ids']),json.dumps(c['findings']))
