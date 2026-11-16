@@ -148,7 +148,7 @@ async def extract_uploaded_timetable(request: Request, pipeline: str = "evidence
     """Extract a bounded raw-body upload; filename is supplied in X-Filename."""
     if pipeline not in {"evidence", "B1", "B2", "B2H-v1"}:
         raise HTTPException(status_code=422, detail="pipeline must be evidence, B1, B2, or B2H-v1")
-    if layout_profile is not None and (layout_profile not in {'ocr-ruled-grid-s2a-v1','ocr-block-grid-s2b-v1'} or pipeline != 'evidence'):
+    if layout_profile is not None and (layout_profile not in {'auto','ocr-ruled-grid-s2a-v1','ocr-block-grid-s2b-v1'} or pipeline != 'evidence'):
         raise HTTPException(422, 'Layout profiles require explicit evidence-only application extraction; registered baseline inputs are unchanged')
     declared_length = request.headers.get("content-length")
     if declared_length:
@@ -166,6 +166,10 @@ async def extract_uploaded_timetable(request: Request, pipeline: str = "evidence
         chunks.append(chunk)
     try:
         def process_upload():
+            if layout_profile == 'auto':
+                from backend.layout.automatic import extract_automatic
+                return extract_automatic(request.headers.get('x-filename', 'upload.pdf'),
+                    request.headers.get('content-type'), b''.join(chunks))
             supplementary = [] if layout_profile else None
             if layout_profile=='ocr-block-grid-s2b-v1':
                 from backend.layout.block_capture import BlockCollector
@@ -191,7 +195,7 @@ async def extract_uploaded_timetable(request: Request, pipeline: str = "evidence
         raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": str(error), "diagnostic_code": getattr(error, "diagnostic_code", None)}) from error
     except ValueError as error:
         if layout_profile:
-            prefix='S2B' if layout_profile=='ocr-block-grid-s2b-v1' else 'S2A'
+            prefix='AUTO' if layout_profile=='auto' else 'S2B' if layout_profile=='ocr-block-grid-s2b-v1' else 'S2A'
             reason=str(error)
             safe=reason if reason.startswith(prefix+'_') and all(c.isupper() or c=='_' or c.isdigit() for c in reason) else prefix+'_EXTRACTION_REJECTED'
             raise HTTPException(422, safe+': unsupported input or bounded evidence limit exceeded') from None

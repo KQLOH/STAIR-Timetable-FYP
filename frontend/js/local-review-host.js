@@ -7,9 +7,11 @@
         const panel = document.createElement('section');
         panel.className = 'panel';panel.setAttribute('aria-label', 'Local student review access');
         const title = document.createElement('h3');title.textContent = 'Review your own timetable';
+        const accessDetails = document.createElement('details'), summary = document.createElement('summary');summary.textContent = 'Editing access: instructions and Advanced Details';accessDetails.append(summary);
         const note = document.createElement('p');note.textContent = 'Your Windows logon and an explicit confirmation in the local host console authorize only the selected source. After a restart, reconnect and reselect the matching original file to inspect image crops.';
         const request = document.createElement('button');request.type = 'button';request.className = 'button secondary';request.id = 'requestLocalReview';request.textContent = 'Request access to this timetable';
         const connect = document.createElement('button');connect.type = 'button';connect.className = 'button secondary';connect.id = 'connectLocalReview';connect.textContent = 'Connect approved review';connect.disabled = true;
+        const instructions = document.createElement('p');instructions.id = 'localReviewInstructions';
         const status = document.createElement('p');status.id = 'localReviewStatus';status.setAttribute('role', 'status');status.textContent = 'Not authorized. Upload your original timetable first.';
         let binding = '', sourceKey = '';
         request.addEventListener('click', async () => {
@@ -25,7 +27,8 @@
                 if (pending.authorized !== false || !/^[A-Za-z0-9_-]{43}$/.test(pending.binding) || !/^[A-Za-z0-9_-]{24}$/.test(pending.nonce)) throw Error('Invalid pending channel.');
                 binding = pending.binding;sourceKey = source.source_document_id + ':' + source.content_sha256;
                 connect.disabled = false;
-                status.textContent = 'In your local host console, personally run: authorize ' + pending.nonce + ' "<path to the original timetable file>" within 120 seconds. Source SHA-256: ' + source.content_sha256 + '. This does not submit any field correction.';
+                accessDetails.open = true;status.textContent = 'Access requested. Follow the instructions below to personally run the consent command, then connect your approved review.';
+                instructions.textContent = 'In your local host console, personally run: authorize ' + pending.nonce + ' "<path to the original timetable file>" within 120 seconds. Source SHA-256: ' + source.content_sha256 + '. This does not submit any field correction.';
             } catch (error) {status.textContent = error.message;}
             finally {request.disabled = false;}
         });
@@ -44,9 +47,10 @@
                 return fetch(target.href, {...options, method, headers, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
             });
             await reviewController.refreshQueue();
-            status.textContent = reviewController.session ? 'Authorized for this source. Queue it once, claim your task and start review. Saved tasks and history survive restart; corrections require your explicit submission.' : 'No authorization confirmed. Check the host console; request fresh access if expired.';
+            const restored=await reviewController.restoreSavedSource?.();
+            status.textContent = restored?.status==='RESTORED' ? 'Saved reviews reconnected. Latest saved class details are now shown. Editing and calendar approval remain separate.' : reviewController.session ? 'Editing enabled for this timetable. Choose Edit class to correct a detail. Saved corrections survive restart; each save needs your explicit confirmation.' : 'No authorization confirmed. Check the host console; request fresh access if expired.';
         });
-        panel.append(title, note, request, connect, status);
-        document.querySelector('.main-area').prepend(panel);
+        accessDetails.append(note, instructions);panel.append(title, request, connect, status, accessDetails);
+        (document.getElementById?.('view-review') || document.querySelector('.main-area')).prepend(panel);
     });
 })();

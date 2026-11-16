@@ -110,7 +110,7 @@
             for(const id of ['reviewRawValue','reviewNormalizedValue','reviewJustification','reviewCorrectionReason','reviewDispositionReason','reviewAlternatives','reviewEvidenceFilter']) if(el(id)) el(id).value='';
             if(el('reviewHumanAssertion'))el('reviewHumanAssertion').checked=false;
             if(hadPrivateSession)this.onForget();
-            set('reviewAuthorization','Public read-only mode. No active scoped review authorization.');this.controls();
+            set('reviewAuthorization','Public read-only mode. No active scoped review authorization.');set('savedReviewStatus','Automatically extracted details are shown. Saved corrections are private; reconnect saved reviews to load them.');this.controls();
             set('reviewTaskStatus','Private task details cleared.');
         }
         async request(method,path,body,publicRequest=false) {
@@ -142,6 +142,7 @@
         }
         feedback(message) {set('reviewWorkflowStatus',message);set('reviewValidationFeedback',message);}
         controls() {
+            global.document?.dispatchEvent?.(new global.Event('stair-review-update'));
             const enabled=!!this.session?.scoped_workflow_enabled, task=!!this.task;
             const disabled=(id,yes)=>{if(el(id))el(id).disabled=yes || this.busy;};
             disabled('loadReviewQueue',false);disabled('endReviewSession',!this.session);
@@ -215,7 +216,7 @@
                 clearTimeout(this.expiryTimer);
                 this.expiryTimer=setTimeout(()=>{this.forget();this.feedback('Review authorization expired. Private review views have been cleared.');},remaining);
                 this.expiryTimer.unref?.(); // Node synthetic tests must not wait for grant expiry.
-                set('reviewAuthorization',`${this.session.mode==='TEST_ONLY'?'TEST_ONLY synthetic demonstration':'Authorized application operator'} · ${this.session.actor_reference} · expires ${this.session.expires_at}. Application repair, not independent research verification. Storage is process-local.`);
+                set('reviewAuthorization',`${this.session.mode==='TEST_ONLY'?'TEST_ONLY synthetic demonstration':'Authorized application operator'} · ${this.session.actor_reference} · expires ${this.session.expires_at}. Application repair, not independent research verification. ${this.session.storage==='LOCAL_WINDOWS_DPAPI_RESTART_PERSISTENT'?'Encrypted corrections survive restart.':'Storage is process-local.'}`);
                 const queue=await this.request('GET',`/api/review/queue?offset=${offset}&limit=50`);
                 const out=el('reviewQueue');out.replaceChildren();
                 if(!queue.tasks.length)out.append(node('p','No tasks are visible within this assignment and source scope.'));
@@ -230,6 +231,62 @@
                 this.nextOffset=queue.next_offset;el('moreReviewTasks').hidden=queue.next_offset==null;
                 this.feedback(`${queue.total} task(s) visible. Select a task; field completeness is not source verification.`);
             });
+        }
+        async restoreSavedSource() {
+            const current=this.getSource(),packet=current?.packet,result=current?.result,session=this.session;
+            if(!packet || result?.busy || !this.permitted('read'))return {status:'NOT_AUTHORIZED',matched:0};
+            const source=packet.source, identities=new Set(packet.events.map(global.STAIRUpload.eventIdentity).filter(Boolean));
+            if(!session.source_bindings.some(([id,hash])=>id===source.source_document_id && hash===source.content_sha256))return {status:'WRONG_SCOPE',matched:0};
+            const generation=this.generation;
+            const stillCurrent=()=>generation===this.generation && this.session===session && this.getSource()?.result===result && sourceKey(this.getSource()?.packet?.source)===sourceKey(source);
+            let outcome={status:'UNAVAILABLE',matched:0};
+            await this.action(async()=>{
+                let offset=0,rows=[];
+                do {
+                    const page=await this.request('GET',`/api/review/queue?offset=${offset}&limit=50`);
+                    rows.push(...page.tasks);
+                    if(page.next_offset!==null && page.next_offset<=offset)throw Error('Saved review pagination is invalid.');
+                    offset=page.next_offset;
+                }while(offset!=null && rows.length<500);
+                if(offset!=null)throw Error('Too many saved tasks to match safely. Inspect Advanced Details.');
+                const runs=new Map();
+                for(const row of rows)if(row.current_event?.revision.source_document_id===source.source_document_id && !runs.has(row.run_id))runs.set(row.run_id,row);
+                const matches=[];let exactSource=false;
+                for(const row of runs.values()) {
+                    const snapshot=await this.request('GET',`/api/review/tasks/${row.task_id}/snapshot`);
+                    global.STAIRUpload.validatePacket(snapshot.packet);
+                    if(sourceKey(snapshot.packet.source)!==sourceKey(source))continue;
+                    exactSource=true;
+                    if(snapshot.scope!=='AUTHORIZED_VISIBLE_TASKS_ONLY' || snapshot.complete_schedule_verified!==false)throw Error('Unexpected saved-review scope.');
+                    const matched=snapshot.packet.events.filter(e=>identities.has(global.STAIRUpload.eventIdentity(e)));
+                    if(matched.length)matches.push({snapshot,matched});
+                }
+                if(!stillCurrent()){outcome={status:'SOURCE_CHANGED',matched:0};return;}
+                // A newly queued machine-only run must not displace the one
+                // explicit saved correction lineage for the same identities.
+                const correctedRuns=matches.filter(m=>m.matched.some(global.STAIRUpload.humanCorrected));
+                const eligible=correctedRuns.length?correctedRuns:matches;
+                if(eligible.length>1) {
+                    outcome={status:'AMBIGUOUS_RUNS',matched:0};
+                    set('savedReviewStatus','More than one saved review matches these classes. Inspect the saved runs in Advanced Details; no version was chosen automatically.');return;
+                }
+                if(!matches.length) {
+                    outcome={status:exactSource?'IDENTITY_MISMATCH':'NO_SAVED_REVIEW',matched:0};
+                    set('savedReviewStatus',exactSource?'Saved reviews exist for this file, but their event identities do not match this reading. Choose the original timetable type/settings or inspect Advanced Details.':'Editing access is connected. No saved reviews match this source. Automatically extracted details are shown.');return;
+                }
+                const {snapshot,matched}=eligible[0];
+                if(this.onSnapshot(snapshot)===false){outcome={status:'SOURCE_CHANGED',matched:0};return;}
+                const corrected=matched.filter(global.STAIRUpload.humanCorrected).length;
+                outcome={status:'RESTORED',matched:matched.length,corrected};
+                set('savedReviewStatus',`Saved reviews connected: ${corrected} human-corrected class(es). Latest authorized values are shown; independent verification and calendar approval are separate.`);
+                // Caller-supplied read-only diagnostics remain blocked. No
+                // approval, validation mutation or original prediction rewrite.
+                try {
+                    const preview=await this.request('POST','/api/calendar/v1/preview',{bundle:{packet:snapshot.packet,context:{},assessments:[],reconstruction_status:'NOT_PROVIDED'}},true);
+                    if(preview.write_authorized!==false)throw Error('Unexpected calendar authorization.');
+                }catch(error){if(error.status===403)throw error;if(stillCurrent())set('savedReviewStatus',`Saved reviews connected: ${corrected} human-corrected class(es). Current cards are available; calendar diagnostics could not be refreshed. Writes remain blocked.`);}
+            });
+            return outcome;
         }
         async ingest() {
             if(!this.permitted('queue'))return;
