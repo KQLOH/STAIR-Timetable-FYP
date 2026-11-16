@@ -82,3 +82,16 @@ sources/
 private/
 local/
 *.zip
+
+# Private review persistence and local diagnostic copies (never source).
+*.dpapi
+*.staging
+*.head-staging
+writer.lock
+StudentReview/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+OCR[0-9]*.png
+OCR[0-9]*.jpg
+OCR[0-9]*.jpeg

@@ -389,7 +389,7 @@
             if(!this.task)return;
             const render=async()=>{
                 const history=await this.request('GET',`/api/review/tasks/${this.task.task_id}/history`),out=el('reviewHistory');out.replaceChildren();
-                out.append(node('h3','Application correction history'),node('p','Process-local records; restart persistence is not provided. This is not independent annotation or Gold.'));
+                out.append(node('h3','Application correction history'),node('p',this.session?.storage==='LOCAL_WINDOWS_DPAPI_RESTART_PERSISTENT'?'Encrypted local records survive backend restarts. Reauthorization is required; this is not independent annotation or Gold.':'Process-local records; restart persistence is not provided. This is not independent annotation or Gold.'));
                 if(!history.corrections.length)out.append(node('p','No corrections have been recorded for this task.'));
                 for(const entry of history.corrections) {
                     const before=JSON.parse(entry.before_json),after=entry.after_json?JSON.parse(entry.after_json):null,proposal=JSON.parse(entry.proposal_json);

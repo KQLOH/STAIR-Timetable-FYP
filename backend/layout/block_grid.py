@@ -27,7 +27,8 @@ CONFIG={'profile_id':PROFILE,'version':'s2b.rt3.1','status':'APPLICATION_ONLY_SY
     'family':'axis-aligned-colored-blocks-day-date-rows-two-clock-rows',
     'detection':DETECTION_CONFIG,'max_groups':40,'max_operations':MAX_OPERATIONS,
     'temporal_authority':'own explicit AM/PM range, explicit header AM/PM, or printed 24-hour statement',
-    'no_implicit_axis_rollover':True,'no_unseen_region_split':True}
+    'no_implicit_axis_rollover':True,'no_unseen_region_split':True,
+    'venue_mapping_revision':'source-word-boundaries-v2'}
 CONFIG_HASH=digest(CONFIG)
 CLOCK=re.compile(r'^(\d{1,2}):(\d{2})\s*([AP]M)?$',re.I)
 CLOCK_SHAPE=re.compile(r'^(?:\d{1,2}|\?{2})[:.](?:\d{2}|\?{2})\s*(?:[AP]M)?$',re.I)
@@ -271,7 +272,14 @@ def four_line_fields(packet,page,region,words,span):
     if issues or not all(any(n.field==f and n.state==FieldState.PRESENT for n in context) for f in ('date','day_of_week')):return None
     lines,texts=shape
     venue=' '.join(texts[1].split()).upper();witnesses=[]
-    if re.fullmatch(r'[A-Z]{1,4}\s*\d{1,4}\s*[A-Z]?',venue):venue=re.sub(r'\s+','',venue)
+    if re.fullmatch(r'[A-Z]{1,4}\s*\d{1,4}\s*[A-Z]?',venue):
+        # The source may distinguish a spaced building/room label from a
+        # compact code. Preserve observed word boundaries; letter/digit shape
+        # alone is not evidence that those boundaries should be removed.
+        if not re.fullmatch(r'[A-Z]{1,4} \d{1,4}',venue):
+            # Retain the existing split-code convention (e.g. letter / digits /
+            # suffix). A two-word building + number label is distinct from it.
+            venue=re.sub(r'\s+','',venue)
     elif ' ' not in venue:
         # Never assume a particular room prefix. Learn a split only from an
         # explicit spaced reading in another valid four-line crop on this page.
@@ -295,7 +303,7 @@ def four_line_fields(packet,page,region,words,span):
         start=sum(len(t)+1 for t in texts[:index])
         node=_field_node(packet,span,words,field,texts[index],start=start,value=value)
         transforms=(('s2b-four-line-course-venue-lecturer-explicit-time-v1' if four_line_shape(words) else 's2b-wrapped-logical-fields-v1'),
-                    'venue-code-uppercase-and-source-supported-spacing' if field=='location' else 'lecturer-name-case-normalization')
+                    'venue-uppercase-preserve-source-word-boundaries-v2' if field=='location' else 'lecturer-name-case-normalization')
         if field=='location' and witnesses:
             node=node.model_copy(update={'evidence_ids':tuple(sorted(set(node.evidence_ids)|{w.evidence_id for w in witnesses}))})
             transforms+=('venue-spacing-prefix-witness:'+','.join(w.evidence_id for w in witnesses),)

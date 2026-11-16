@@ -128,6 +128,12 @@
             finally { clearTimeout(timer); signal.removeEventListener("abort", onAbort); }
         }
         async run(file, pipeline, {reconstruct = true, layout = false, ruledGrid = false, blockGrid = false, contextCorrection = false} = {}) {
+            // Reject an invalid replacement before discarding source or review work.
+            if (this.result) {
+                const previousSequence = this.sequence;
+                await validateFile(file);
+                if (previousSequence !== this.sequence) return this.result;
+            }
             this.reset();
             const sequence = this.sequence;
             const controller = new AbortController(); this.abortController = controller;
@@ -193,7 +199,7 @@
                     reconstruction_status:output?.status || (result.stages.reconstruction === "EXECUTION_ABORTED" ? "EXECUTION_ABORTED" : "NOT_PROVIDED"), context:{}, assessments:[]};
                 // Public M5 decisions omit complete findings; never manufacture a full M6 assessment from them.
                 try {
-                    if(bundle.packet.evidence.length>512)throw new Error('Calendar diagnostic evidence limit (512 spans) exceeded; calendar remains blocked.');
+                    if(bundle.packet.evidence.length>4096)throw new Error('Calendar diagnostic evidence limit (4096 spans) exceeded; calendar remains blocked.');
                     const eligibility = await this.request("/api/calendar/v1/eligibility", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(bundle)}, signal);
                     if (sequence !== this.sequence) return result;
                     requireValue(eligibility.policy_status === "BLOCKED" && eligibility.external_calendar === false && Array.isArray(eligibility.events) &&
@@ -222,10 +228,10 @@
 
     function eventView(event, layer) {
         const content = event.revision.content;
-        const required = ["course_code", "session_type", "start_time", "end_time", "location"];
-        const complete = required.every(k => content[k] != null) && (content.date != null || content.day_of_week != null) &&
+        const required = ["session_type", "start_time", "end_time", "location"];
+        const complete = Boolean(content.course_code || content.course_name) && required.every(k => content[k] != null) && (content.date != null || content.day_of_week != null) &&
             !event.revision.observations.some(f => ["UNRESOLVED","CONFLICTING"].includes(f.state));
-        return {id:event.candidate_id, subject:content.course_code || "Unresolved course", subjectName:content.course_name || "",
+        return {id:event.candidate_id, subject:content.course_code || content.course_name || "Unresolved course", subjectName:content.course_name || "",
             day:DAY[content.day_of_week], date:content.date || "Unresolved date", start:content.start_time || "?", end:content.end_time || "?",
             venue:content.location || "Unresolved venue", type:content.session_type || "Unresolved type", source:layer,
             lecturer:content.lecturer || "", section:content.section || "", status:"review", completeCandidate:complete, selected:false, canonical:event};

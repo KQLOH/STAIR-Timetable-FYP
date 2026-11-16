@@ -53,7 +53,7 @@ class RT3Contracts(unittest.TestCase):
     def test_wrapped_fields_and_single_name(self):
         p,s=wrapped_fixture(['QA1701','(T)','RX 204','Alex','River','9:00 AM -','11:00 AM'])
         v=values(p,s)[0]
-        self.assertEqual((v['course_code'],v['session_type'],v['location'],v['lecturer'],v['start_time'],v['end_time']),('QA1701','Tutorial','RX204','Alex River','09:00','11:00'))
+        self.assertEqual((v['course_code'],v['session_type'],v['location'],v['lecturer'],v['start_time'],v['end_time']),('QA1701','Tutorial','RX 204','Alex River','09:00','11:00'))
         self.assertIsNone(v['course_name'])
         p,s=wrapped_fixture(['QA1701 (L)','HX ABC','Alex','9:00 AM - 11:00 AM'])
         v=values(p,s)[0];self.assertEqual((v['location'],v['lecturer']),('HX ABC','Alex'))

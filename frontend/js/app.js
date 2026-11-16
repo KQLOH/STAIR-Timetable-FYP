@@ -1059,7 +1059,12 @@ function previewUploadedFile(file) {
         layout:document.getElementById("runLayoutAssociation")?.checked === true,
         ruledGrid:document.getElementById("runRuledGridS2a")?.checked === true,
         blockGrid:document.getElementById("runBlockGridS2b")?.checked === true,
-        contextCorrection:document.getElementById("runContextCorrection")?.checked === true});
+        contextCorrection:document.getElementById("runContextCorrection")?.checked === true}).catch(error => {
+            const message = STAIRUpload.diagnostic(error);
+            setText("processingStatus", "Replacement rejected; current timetable retained. " + message);
+            showToast("File not replaced", message, true);
+            return state.upload;
+        });
 }
 
 function clearUploadView() {
