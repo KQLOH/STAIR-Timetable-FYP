@@ -2,14 +2,14 @@
 
 The README in the branch being reviewed is the primary setup guide. The repository's default branch can lag the owner's unpublished local work. Clone the **published branch supplied by the owner**, not an assumed historical release branch.
 
-After the proposed supervisor branch has actually been approved and published, an example checkout is:
+For the versioned system-update checkpoint, clone this branch after it is published by the owner:
 
 ```powershell
-git clone --branch codex/supervisor-review-20261116 https://github.com/KQLOH/STAIR-Timetable-FYP.git
+git clone --branch codex/supervisor-system-update-20261117 https://github.com/KQLOH/STAIR-Timetable-FYP.git
 Set-Location STAIR-Timetable-FYP
 ```
 
-That branch name is a publication proposal until the owner confirms it exists. If a different branch is shared, substitute that exact name. A supervisor can inspect a public branch in GitHub without cloning or using private timetable data.
+The default branch and older checkpoint branches can differ from this working-system snapshot. A supervisor can inspect the published branch in GitHub without cloning or using private timetable data. Saved-review restoration has automated and synthetic browser coverage; genuine authorized OCR2 browser verification remains incomplete.
 
 ## Dependencies
 

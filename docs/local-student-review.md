@@ -19,7 +19,7 @@ If port 8020 is occupied, stop the earlier STAIR host in its own console; do not
 
 ## Authorize only your uploaded source
 
-1. Enable **RT2 Block OCR** and keep **RT4** enabled in Extraction settings. Upload your original timetable file. Inspect the class cards and **View source** crops.
+1. Choose **Colored timetable** in the **Timetable type** dropdown for a colored-block source; use **Grid timetable** or **Standard image or PDF** for the other supported layouts. RT4 is enabled by default for Colored mode and can be inspected in Advanced Details. Upload your original timetable file. Inspect the class cards and **View source** crops.
 2. Click **Request access to this timetable** in the local review panel.
 3. At `STAIR owner>` in your PowerShell console, personally type the following, replacing the nonce with the one displayed in Chrome:
 
@@ -28,8 +28,8 @@ If port 8020 is occupied, stop the earlier STAIR host in its own console; do not
    ```
 
    The request expires after 120 seconds. The host checks the original file's SHA-256, the pending browser channel and the current Windows logon before granting 30-minute access to that exact document/hash. This does not submit a field correction or approve a calendar.
-4. In Chrome, click **Connect approved review**. Open **Advanced review workspace**. Verify the displayed actor/source scope.
-5. Click **Queue current source** once. If it is already queued, open the authorized queue instead. Select the appropriate saved task, click **Assign to me**, then **Start / resume assigned review**.
+4. In Chrome, click **Connect approved review**. Matching saved revisions now load directly into the main class cards and calendar preview. Use **Reconnect saved reviews** after re-uploading a source without an active grant. No correction is resubmitted by reconnecting. Actor/source details remain in **Advanced review workspace**.
+5. For existing saved reviews, do not queue or submit anything merely to display them. Use **Edit class** only when another edit is needed. Advanced queue controls remain available for inspection. If **Needs review** remains after values reconnect, inspect unresolved fields or use **Check saved class** for a genuinely pending revalidation; absence of independent verification alone does not count as a pending correction.
 
 No account name entered in a webpage grants authority. Cookies are HttpOnly/SameSite Strict; the separate request binding remains in browser memory. Neither credentials nor grants are saved to web storage or restored after a restart. Do not share the console or Windows account with another reviewer.
 
@@ -54,7 +54,7 @@ Use **Review history** to inspect original prediction, proposal, real actor/time
 
 - Default storage: `%LOCALAPPDATA%\STAIR\StudentReview`. Missing directories are created with a protected current-user/SYSTEM ACL. Storage must remain beneath the Windows Known Folder LocalAppData root; custom paths outside that root are rejected. Microsoft Store Python may redirect the logical path into its user-local package cache; use the **Encrypted storage** path printed by the host to locate the actual files. This is supported redirection, not permission to traverse a junction or symbolic link. It is outside Git. Full original predictions, OCR evidence, corrections, audit/revision histories and validation outcomes are protected using Windows user-scope DPAPI. [Microsoft DPAPI documentation](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata).
 - Type `quit` in the host console to stop. Restart with the same PowerShell commands and Windows account. Do not change the storage path between runs.
-- Reloading Chrome or restarting the backend requires a **new** access request and your new console authorization. Enable the same RT2/RT4 extraction settings and upload the same original file to restore image/crop viewing, then reconnect and open the existing queue. Do **not** requeue a duplicate or resubmit the previous correction.
+- Reloading Chrome or restarting the backend requires a **new** access request and your new console authorization. Choose the same timetable type and correction settings as the original upload, and upload the same original file to restore image/crop viewing, then reconnect and open the existing queue. Do **not** requeue a duplicate or resubmit the previous correction.
 - Use **Review history** to verify the original correction timestamp and revision survived. A current task snapshot drives both class cards and the read-only preview; old approvals/previews are not reused.
 - **End authorized review session** revokes access. It retains encrypted records. No production calendar writes are provided.
 

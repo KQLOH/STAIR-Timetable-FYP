@@ -5,7 +5,14 @@ A Software Engineering FYP prototype with a FastAPI backend and HTML/CSS/JavaScr
 
 The working system provides timetable extraction, source-linked class review, explicit human corrections, revision tracking, revalidation and a read-only calendar preview. The optional Windows review host authenticates the local Windows account and requires console consent for the exact uploaded file. It stores review history locally using user-scope DPAPI encryption.
 
-Use the branch shared by the project owner. Local changes are not visible on GitHub until the owner confirms a commit and push. See [supervisor review and publication](docs/supervisor-review.md).
+Use the versioned supervisor checkpoint branch below. The project owner controls publication; setup details are in [the setup guide](docs/setup.md).
+
+```powershell
+git clone --branch codex/supervisor-system-update-20261117 https://github.com/KQLOH/STAIR-Timetable-FYP.git
+Set-Location STAIR-Timetable-FYP
+```
+
+This checkpoint includes the student editor, manual reader selection, ruled-cell source inspection, failed-replacement recovery, calendar warnings and saved-review reconnection. The saved-correction display fix is implemented and covered by automated DPAPI restart and synthetic Chrome tests. **Verification against a genuine authorized OCR2 Chrome session remains incomplete.** Do not interpret these checks as real extraction accuracy, independent Gold or production calendar approval.
 
 ## Install
 
@@ -33,7 +40,9 @@ whoami /user
 .\.venv\Scripts\python.exe -B tools/run_student_review.py
 ```
 
-Open **http://127.0.0.1:8020** in Chrome. This single process serves the frontend and backend. It requires an interactive console. Upload your own timetable, request access in the page, and personally authorize the displayed nonce for the matching original file in the console. See the [complete correction/retry/restart instructions](docs/local-student-review.md).
+Open **http://127.0.0.1:8020** in Chrome. Use **Upload → Review classes → Calendar preview**. Choose the **Timetable type** yourself: **Colored timetable**, **Grid timetable**, or **Standard image or PDF** (the default). Colored mode uses S2b with RT4 enabled by default; Grid uses word OCR and ruled-cell handling; General preserves native PDF text when available. Automatic routing is off and remains an optional advanced setting. Unsupported layouts and uncertain fields remain explicit limitations. Choose **Edit class**, inspect the original, enter a correction, select the source text and personally confirm your reading before saving. Technical controls remain under **Advanced Details**.
+
+This single process serves the frontend and backend. It requires an interactive console. Upload your own timetable, request access in the page, and personally authorize the displayed nonce for the matching original file in the console. See the [complete correction/retry/restart instructions](docs/local-student-review.md).
 
 Encrypted review records stay beneath Windows LocalAppData, outside the repository. Store Python may redirect storage into its user-local package cache; the host prints the actual path. Reload/restart requires fresh browser authorization, while correction history and original OCR evidence persist. Reselect the original file for image crops. Type `quit` to stop. If the port is occupied, stop your earlier host in its own console; do not terminate unrelated processes.
 

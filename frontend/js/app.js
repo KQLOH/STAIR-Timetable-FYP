@@ -38,6 +38,7 @@ const reviewController = typeof STAIRReview === "undefined" ? null : new STAIRRe
     onForget:clearReviewSessionProjection
     // No host transport or grant is installed by normal startup.
 });
+const studentEditor = typeof STAIRStudentReview === 'undefined' ? null : new STAIRStudentReview.Editor({review:reviewController,getSource:reviewSource,getUpload:()=>state.upload});
 const calendarSandboxController = typeof STAIRSandbox === "undefined" ? null : new STAIRSandbox.Controller({base:API_BASE});
 
 function reviewSource() {
@@ -64,7 +65,7 @@ function clearReviewSessionProjection() {
         setText("documentName","No document selected");setText("documentMeta","—");
     }
     analysisController?.invalidate(null,true);renderEverything();
-    setText("processingStatus","Private review projection cleared. Any remaining local upload shows its original extraction, not current protected revisions.");
+    setText("processingStatus","Editing session ended. Reconnect to view saved corrections. The uploaded file now shows its original reading.");
 }
 
 function renderHistoricalReviewEvidence() {
@@ -79,7 +80,7 @@ function invalidateReviewDiagnostics(source) {
     state.reviewStale=true;sourceGeneration++;
     analysisController?.invalidate(null,true);
     renderHistoricalReviewEvidence();renderEverything();
-    setText("processingStatus","Application correction pending or stale — previous policy, calendar preview and analysis invalidated.");
+    setText("processingStatus","Saving or checking your change. The calendar preview will refresh when the current class details are available.");
 }
 
 function applyReviewSnapshot(snapshot) {
@@ -92,13 +93,16 @@ function applyReviewSnapshot(snapshot) {
         const preview=document.getElementById("documentPreview");
         preview?.replaceChildren();
         if (preview) {const note=document.createElement("p");note.textContent="This authorized review capture has no local source-image preview. Inspect its source-linked text, page and coordinates in candidate details.";preview.append(note);}
-        setText("documentName","Authorized application review capture");setText("documentMeta",snapshot.packet.source.source_document_id);
+        setText("documentName","Saved timetable");setText("documentMeta","Reselect the original file to inspect image crops");
     }
+    const automatic=state.upload?STAIRUpload.displayedEvents(state.upload):null;
+    if(automatic && !snapshot.packet.events.some(event=>STAIRUpload.eventIdentity(event) && automatic.some(view=>STAIRUpload.eventIdentity(view.canonical)===STAIRUpload.eventIdentity(event))))return false;
     sourceGeneration++;state.reviewSnapshot=snapshot;state.reviewStale=false;state.meta=null;
-    state.events=snapshot.packet.events.map(event=>({...STAIRUpload.eventView(event,STAIRUpload.sourceLabel(snapshot.packet.source)),methodLabel:event.revision.method_id}));
+    state.events=automatic?STAIRUpload.mergeSavedViews(automatic,snapshot):snapshot.packet.events.map(event=>({...STAIRUpload.eventView(event,STAIRUpload.sourceLabel(snapshot.packet.source)),methodLabel:event.revision.method_id,reviewTask:snapshot.tasks.find(t=>t.current_event?.revision.revision_id===event.revision.revision_id),savedReview:true}));
     analysisController?.invalidate(null,true);
     renderHistoricalReviewEvidence();renderEverything();
-    setText("processingStatus","Backend-confirmed application revisions — no new decoder prediction, Gold verification or calendar approval.");
+    setText('savedReviewStatus',`Latest authorized saved reviews shown: ${state.events.filter(v=>STAIRUpload.humanCorrected(v.canonical)).length} human-corrected class(es). Independent verification and calendar approval are separate.`);
+    setText("processingStatus","Your saved class details are shown. Calendar preview uses these details; synchronization remains unavailable.");
     return true;
 }
 
@@ -146,11 +150,19 @@ document.addEventListener(
         setupNavigation();
         shellControls?.setup();
         reviewController?.setup();
+        studentEditor?.setup();
         calendarSandboxController?.setup();
 
         setupSourceButtons();
+        setupReaderSelection();
 
         setupReviewControls();
+        document.getElementById('reconnectSavedReviews')?.addEventListener('click',async()=>{
+            if(reviewController?.session && sameReviewCapture(reviewSource().packet.source) && reviewController.session.source_bindings.some(([id,hash])=>id===reviewSource().packet.source.source_document_id && hash===reviewSource().packet.source.content_sha256))await reviewController.restoreSavedSource();
+            else if(document.getElementById('requestLocalReview'))document.getElementById('requestLocalReview').click();
+            else setText('savedReviewStatus','Open the local Windows review application at http://127.0.0.1:8020 and authorize this original file to reconnect saved reviews. This page remains read-only.');
+        });
+        document.addEventListener('stair-edit-class',event=>studentEditor?.open(event.detail.candidateId));
 
         setupCalendarControls();
         document.getElementById("analyzeSchedule")?.addEventListener("click", () => analysisController.run());
@@ -1024,6 +1036,7 @@ function normaliseIntranetEvent(
 
 const uploadController = new STAIRUpload.Controller({base:API_BASE, notify:result => {
     state.reviewSnapshot=null;state.reviewStale=false;
+    setText('savedReviewStatus','Automatically extracted details are shown. Saved corrections are private; reconnect saved reviews to load them.');
     state.upload = result;
     const inspection=document.getElementById("sourceInspection");if(inspection){inspection.hidden=true;inspection.replaceChildren();}
     state.source = "upload";
@@ -1034,7 +1047,8 @@ const uploadController = new STAIRUpload.Controller({base:API_BASE, notify:resul
     setText("documentMeta", `${formatFileSize(result.size)} · ${result.mime || "validating"} · ${result.pipeline}`);
     setText("processingStatus",result.busy ? "Reading your timetable…" : result.stages.extraction==='FAILED' ? "Unable to read this file. Try again or replace it." :
         result.status?.includes('CANCELLED') ? "Processing cancelled." : result.diagnostics.length ? "Ready to review. Some details may be missing; see technical details." : "Ready to review. Check the extracted details below.");
-    setText("runStatus", result.status);
+    if(result.replacementError)setText("processingStatus","Your previous timetable is retained. "+(result.replacementMessage || "The new file could not be read; try another file."));
+    setText("runStatus", result.busy ? "Reading timetable…" : result.replacementError ? "Previous timetable retained" : result.stages.extraction==='FAILED' ? "Unable to read file" : "Ready to review");
     const progress = document.getElementById("uploadProgress"); if (progress) progress.hidden = !result.busy;
     const cancel = document.getElementById("cancelUpload");
     if (cancel) cancel.disabled = !result.busy;
@@ -1049,17 +1063,41 @@ const uploadController = new STAIRUpload.Controller({base:API_BASE, notify:resul
     if (image) STAIRUpload.drawBoxes(image.parentElement, image, result);
     STAIRUpload.renderEvidence(result);
     renderEverything();
+    if(!result.busy && result.reconstruction && reviewController?.session)queueMicrotask(()=>reviewController.restoreSavedSource());
 }});
+
+function setupReaderSelection() {
+    const reader=document.getElementById('timetableReader');if(!reader)return;
+    const advanced=document.getElementById('useAdvancedReader');
+    const describe=()=>setText('readerHint',advanced?.checked ? 'Advanced settings are active. Choose a timetable type above to return to manual selection.' :
+        reader.value==='colored' ? 'For colored class blocks with visible day and time headers. Safe OCR text correction is enabled by default.' :
+        reader.value==='grid' ? 'For ruled timetable cells, including merged cells, with visible weekday and time headers.' :
+        'For text lists and standard PDFs. PDFs with selectable text keep their original text.');
+    reader.addEventListener('change',()=>{if(advanced)advanced.checked=false;describe();});
+    advanced?.addEventListener('change',describe);
+    for(const id of ['runBlockGridS2b','runRuledGridS2a','automaticReader'])document.getElementById(id)?.addEventListener('change',()=>{
+        if(document.getElementById(id).checked)for(const other of ['runBlockGridS2b','runRuledGridS2a','automaticReader'])if(other!==id)document.getElementById(other).checked=false;
+    });
+    describe();
+}
 
 function previewUploadedFile(file) {
     sourceGeneration++;
     showView("review");
-    const pipeline = document.getElementById("extractionPipeline")?.value || "evidence";
-    return uploadController.run(file, pipeline, {reconstruct:document.getElementById("runP1")?.checked !== false,
-        layout:document.getElementById("runLayoutAssociation")?.checked === true,
-        ruledGrid:document.getElementById("runRuledGridS2a")?.checked === true,
-        blockGrid:document.getElementById("runBlockGridS2b")?.checked === true,
-        contextCorrection:document.getElementById("runContextCorrection")?.checked === true}).catch(error => {
+    const reader=document.getElementById('timetableReader');
+    const {pipeline,...options}=STAIRUpload.readerConfiguration(!reader?.value || document.getElementById('useAdvancedReader')?.checked ? 'advanced' : reader.value, {
+        pipeline:document.getElementById('extractionPipeline')?.value || 'evidence',
+        reconstruct:document.getElementById('runP1')?.checked !== false,
+        layout:document.getElementById('runLayoutAssociation')?.checked === true,
+        ruledGrid:document.getElementById('runRuledGridS2a')?.checked === true,
+        blockGrid:document.getElementById('runBlockGridS2b')?.checked === true,
+        automatic:document.getElementById('automaticReader')?.checked === true,
+        contextCorrection:document.getElementById('runContextCorrection')?.checked !== false});
+    const previousUpload=state.upload, previousReview=state.reviewSnapshot;
+    return uploadController.run(file, pipeline, options).then(result=>{
+            if(result===previousUpload && previousReview && !state.reviewStale)applyReviewSnapshot(previousReview);
+            return result;
+        }).catch(error => {
             const message = STAIRUpload.diagnostic(error);
             setText("processingStatus", "Replacement rejected; current timetable retained. " + message);
             showToast("File not replaced", message, true);
@@ -1230,9 +1268,10 @@ function renderMetrics() {
     const all=STAIRUpload.uniqueEvents(state.events);
     const detected=all.length;
     const ready=all.filter(e=>e.completeCandidate===true).length;
-    const review=detected-ready;
-    setText("reviewFound",detected);setText("reviewComplete",ready);setText("reviewNeedsReview",review);
-    setText("reviewVerified",all.filter(e=>STAIRUpload.verified(e.canonical)).length);
+    const review=all.filter(STAIRUpload.needsStudentReview).length;
+    setText("reviewFound",detected);setText("reviewComplete",ready);setText("reviewNeedsReview",state.reviewStale?'Updating…':review);
+    setText("reviewVerified",all.filter(e=>STAIRUpload.independentlyVerified(e.canonical)).length);
+    setText('reviewBoundary',state.reviewSnapshot?'Latest authorized saved values are shown alongside any unmatched automatic readings. Human correction is not independent verification; calendar sync remains blocked.':'Read-only automatic extraction. Reconnect saved reviews to display your private corrections.');
     setText(
         "metricDetected",
         detected || "—"
@@ -1540,7 +1579,7 @@ function renderReview() {
         const control = document.getElementById(id); if (control) control.disabled = !demo;
     }
     if (state.upload) {
-        const display=state.reviewSnapshot || state.reviewStale ? {...state.upload,policy:state.reviewStale?[]:state.reviewSnapshot.tasks.map(t=>t.decision)} : state.upload;
+        const display=state.reviewSnapshot || state.reviewStale ? {...state.upload,reviewEvidence:state.reviewStale?[]:state.reviewSnapshot.packet.evidence,policy:state.reviewStale?[]:state.reviewSnapshot.tasks.map(t=>t.decision)} : state.upload;
         STAIRUpload.renderCards(getVisibleEvents(), display, container);
         return;
     }
@@ -1838,10 +1877,13 @@ function renderCalendar() {
     if (!grid) return;
     if (state.reviewStale) {
         for(const id of ["previousWeek","nextWeek"]) {const button=document.getElementById(id);if(button)button.disabled=true;}
+        setText("studentCalendarWarnings","A correction is pending. Refresh the saved class before using the calendar preview.");
         setText("calendarRange","Previous revision view invalidated by application review");
         setText("calendarScopeNote","Refresh the authorized task and its current revision before using calendar diagnostics. Writes remain blocked.");
         setText("calendarUndated","");grid.innerHTML='<p class="calendar-scope-note">No current revision preview is available.</p>';return;
     }
+    const checks=typeof STAIRCalendarChecks==='undefined'?null:STAIRCalendarChecks.inspect(state.events);
+    setText("studentCalendarWarnings",checks ? `${checks.conflicts} overlapping class pair(s) · ${checks.duplicates} possible duplicate pair(s). Check uncertain dates, times and repeat schedules before planning. Calendar sync is unavailable.` : "");
     const scope = loadedCalendarScope();
     if (!scope || calendarViewport?.key !== scope.key) calendarViewport = scope ? {key: scope.key, start: scope.first} : null;
     const first = calendarViewport?.start;
@@ -1870,10 +1912,11 @@ function renderCalendar() {
         const events = state.events.filter(event => event.date === date)
             .sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
         const body = events.length ? events.map(event => `
-            <div class="calendar-event ${event.status === "review" ? "review" : ""}">
+            <div class="calendar-event ${event.status === "review" ? "review" : ""} ${checks?.warnings.get(event.id)?.some(w=>w.includes('Overlaps') || w.includes('duplicate'))?'has-conflict':''}">
                 <strong>${escapeHtml(event.subject)}</strong>
                 <span>${escapeHtml(`${event.start || "?"} – ${event.end || "?"}`)}</span>
                 <span>${escapeHtml(event.venue || "Venue unresolved")}</span>
+                ${(checks?.warnings.get(event.id) || []).map(w=>`<span class="calendar-warning">${escapeHtml(w)}</span>`).join('')}
                 ${event.day && event.day !== day ? '<span>Printed weekday differs; inspect source evidence.</span>' : ""}
             </div>`).join("") : '<div class="day-empty">No dated candidate displayed (completeness unverified)</div>';
         return `<div class="day-column"><div class="day-heading">${DAY_LABEL[day]}<small>${date}</small></div>${body}</div>`;

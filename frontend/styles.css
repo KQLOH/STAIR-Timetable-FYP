@@ -2325,3 +2325,6 @@ summary { cursor:pointer; border-radius:4px; }
 .review-queue-choice { display:grid; justify-items:start; text-align:left; gap:6px; padding:16px; white-space:normal; }
 .review-queue-choice small { font-weight:400; color:var(--muted); }
 @media(max-width:650px) { #reviewCandidateChoices { grid-template-columns:1fr; } }
+
+/* Student editing reuses protected review APIs; technical controls stay available. */
+.student-editor{display:grid;gap:16px;padding-bottom:24px}.student-editor label{display:grid;gap:6px;font-size:14px}.student-editor input,.student-editor select,.student-editor textarea{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px}.student-editor .student-confirm{display:flex;align-items:flex-start;gap:10px}.student-confirm input{width:auto;margin-top:4px}#studentCrop canvas{max-width:100%;height:auto;border-radius:8px}#studentFeedback{overflow-wrap:anywhere;line-height:1.6}#advancedClassReview{border-top:1px solid var(--line);padding-top:16px}#advancedClassReview summary{cursor:pointer}#advancedClassReview:not([open])>*:not(summary){display:none}.calendar-event.has-conflict{border:2px solid #ac3838}.calendar-event .calendar-warning{color:#8a2323;font-weight:600}@media(max-width:650px){.review-drawer{width:100%;max-width:100%}.class-footer{gap:10px;flex-wrap:wrap}}

@@ -16,6 +16,30 @@
             .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s"<>]+/g, "[LOCAL_PATH_REDACTED]").slice(0, 1500);
     }
 
+    function readerConfiguration(reader='general', settings={}) {
+        // Normal student selections are complete configurations. Hidden legacy
+        // toggles cannot accidentally combine a baseline and a layout sidecar.
+        if(reader!=='advanced') {
+            requireValue(['general','colored','grid'].includes(reader), 'Choose a supported timetable reader.');
+            return {pipeline:'evidence',reconstruct:true,layout:reader==='general',
+                blockGrid:reader==='colored',ruledGrid:reader==='grid',automatic:false,
+                contextCorrection:reader==='colored' && settings.contextCorrection!==false};
+        }
+        const pipeline=PIPELINES.includes(settings.pipeline)?settings.pipeline:'evidence';
+        const application=pipeline==='evidence',blockGrid=application && settings.blockGrid===true;
+        const ruledGrid=application && !blockGrid && settings.ruledGrid===true;
+        return {pipeline,reconstruct:settings.reconstruct!==false,layout:settings.layout===true,
+            blockGrid,ruledGrid,automatic:application && !blockGrid && !ruledGrid && settings.automatic===true,
+            contextCorrection:blockGrid && settings.contextCorrection!==false || application && !blockGrid && !ruledGrid && settings.automatic===true && settings.contextCorrection!==false};
+    }
+    function friendlyFailure(error) {
+        const message=String(error?.message || '');
+        if(message.includes('AUTO_MIXED_LAYOUTS'))return 'This PDF contains different page layouts. Upload its pages separately.';
+        if(message.includes('AUTO_PAGE_CAP'))return 'Upload at most four pages at a time, or split this PDF into smaller files.';
+        if(message.includes('OCR_UNAVAILABLE'))return 'Text recognition is unavailable on this computer. Check the OCR setup or use a PDF with selectable text.';
+        if(message.includes('INVALID_PDF'))return 'This PDF could not be opened. Try another copy or export it as an image.';
+        return 'We couldn’t read this file. Try another copy or a clearer image with the full timetable and headers visible.';
+    }
     async function validateFile(file) {
         const extension = String(file?.name || "").split(".").pop().toLowerCase();
         const mime = TYPES[extension];
@@ -127,15 +151,18 @@
             } catch (error) { if (timedOut) throw new Error("Request timed out; no success assumed. Retry explicitly."); throw error; }
             finally { clearTimeout(timer); signal.removeEventListener("abort", onAbort); }
         }
-        async run(file, pipeline, {reconstruct = true, layout = false, ruledGrid = false, blockGrid = false, contextCorrection = false} = {}) {
+        async run(file, pipeline, {reconstruct = true, layout = false, ruledGrid = false, blockGrid = false, contextCorrection = false, automatic = false} = {}) {
             // Reject an invalid replacement before discarding source or review work.
             if (this.result) {
                 const previousSequence = this.sequence;
                 await validateFile(file);
                 if (previousSequence !== this.sequence) return this.result;
             }
-            this.reset();
+            const previousResult=this.result, previousUrl=this.objectUrl;
+            const canRestore=previousResult && !previousResult.busy;
+            this.cancel();this.objectUrl=null;this.result=null;
             const sequence = this.sequence;
+            if(previousResult)delete previousResult.replacementError;
             const controller = new AbortController(); this.abortController = controller;
             const signal = controller.signal;
             const result = this.result = {filename:file.name, size:file.size, busy:true, status:"Validating file…", pipeline,
@@ -151,10 +178,18 @@
                 if (sequence !== this.sequence) return result;
                 this.objectUrl = global.URL.createObjectURL(file); result.previewUrl = this.objectUrl; result.mime = mime;
                 emit(`Extracting ${pipeline} evidence…`);
-                const selectedLayoutProfile = blockGrid ? "ocr-block-grid-s2b-v1" : ruledGrid ? "ocr-ruled-grid-s2a-v1" : null;
-                const extracted = await this.request(`/api/extract?pipeline=${encodeURIComponent(pipeline)}` + (selectedLayoutProfile ? "&layout_profile=" + selectedLayoutProfile : ""), {
+                automatic = automatic && pipeline === 'evidence' && !blockGrid && !ruledGrid;
+                let selectedLayoutProfile = blockGrid ? "ocr-block-grid-s2b-v1" : ruledGrid ? "ocr-ruled-grid-s2a-v1" : null;
+                const extracted = await this.request(`/api/extract?pipeline=${encodeURIComponent(pipeline)}` + (automatic ? "&layout_profile=auto" : selectedLayoutProfile ? "&layout_profile=" + selectedLayoutProfile : ""), {
                     method:"POST", headers:{"Content-Type":mime, "X-Filename":filename}, body:file}, signal);
                 result.extraction = validateExtraction(extracted, pipeline);
+                if (automatic) {
+                    requireValue(extracted.reader_selection === 'measured-structure-v1' &&
+                        [null, 'ocr-block-grid-s2b-v1', 'ocr-ruled-grid-s2a-v1'].includes(extracted.layout_profile), 'Invalid automatic reader selection.');
+                    selectedLayoutProfile = extracted.layout_profile;
+                    blockGrid = selectedLayoutProfile === 'ocr-block-grid-s2b-v1';
+                    ruledGrid = selectedLayoutProfile === 'ocr-ruled-grid-s2a-v1';
+                }
                 if (selectedLayoutProfile) {
                     requireValue(extracted.layout_profile === selectedLayoutProfile && extracted.layout_evidence?.schema_version === (blockGrid ? "s2b.1" : "s2a.1"), "Missing versioned supplementary layout evidence.");
                     result.layoutEvidence = extracted.layout_evidence;
@@ -218,11 +253,18 @@
                 emit(result.diagnostics.length ? "Processing finished with limitations — inspect diagnostics" : "Processing finished — candidates are not verified or calendar-approved");
             } catch (error) {
                 if (sequence !== this.sequence) return result;
-                result.stages.extraction = "FAILED"; result.diagnostics.push(diagnostic(error)); emit("PROCESSING FAILED — no successful timetable claimed");
+                result.stages.extraction = "FAILED"; result.failureMessage=friendlyFailure(error);result.diagnostics.push(diagnostic(error)); emit("PROCESSING FAILED — no successful timetable claimed");
             } finally {
-                if (sequence === this.sequence) { result.busy = false; this.abortController = null; this.notify(result); }
+                if (sequence === this.sequence) {
+                    result.busy = false; this.abortController = null;
+                    if(canRestore && (result.stages.extraction==='FAILED' || result.status?.includes('CANCELLED'))) {
+                        this.releasePreview();this.objectUrl=previousUrl;this.result=previousResult;
+                        previousResult.replacementError=result.diagnostics.join(' · ') || 'Replacement cancelled';previousResult.replacementMessage=result.failureMessage;
+                        this.notify(previousResult);
+                    } else {if(previousUrl)global.URL.revokeObjectURL(previousUrl);this.notify(result);}
+                } else if(previousUrl)global.URL.revokeObjectURL(previousUrl);
             }
-            return result;
+            return sequence===this.sequence?this.result:result;
         }
     }
 
@@ -235,6 +277,38 @@
             day:DAY[content.day_of_week], date:content.date || "Unresolved date", start:content.start_time || "?", end:content.end_time || "?",
             venue:content.location || "Unresolved venue", type:content.session_type || "Unresolved type", source:layer,
             lecturer:content.lecturer || "", section:content.section || "", status:"review", completeCandidate:complete, selected:false, canonical:event};
+    }
+    function eventIdentity(event) {
+        return event?.candidate_id && event?.identity?.event_id ? JSON.stringify([event.candidate_id,event.identity.event_id]) : null;
+    }
+    function humanCorrected(event) {
+        return ['CORRECTED','APPROVED'].includes(event?.human_review?.status) && event.human_review.revision_id===event.revision.revision_id;
+    }
+    function independentlyVerified(event) {
+        const v=event?.human_verification;
+        return v?.status==='INDEPENDENTLY_VERIFIED' && v.revision_id===event?.revision?.revision_id && !!v.actor_id && !!v.recorded_at && !!v.evidence_record_id;
+    }
+    function needsStudentReview(view) {
+        if(!view.completeCandidate)return true;
+        const task=view.reviewTask,event=view.canonical;
+        if(['REVALIDATION_REQUIRED','SUBMITTED_CORRECTION','ESCALATED'].includes(task?.state))return true;
+        if(humanCorrected(event) && (event.validation?.revision_id!==event.revision.revision_id ||
+            ['NOT_ASSESSED','FAILED'].includes(event.validation?.status)))return true;
+        // Missing calibration, independent verification and calendar approval
+        // are separate gates, not evidence of an outstanding field correction.
+        return false;
+    }
+    function mergeSavedViews(automatic,snapshot) {
+        const latest=new Map(),tasks=new Map((snapshot.tasks || []).filter(t=>t.current_event).map(t=>[eventIdentity(t.current_event),t]));
+        for(const event of snapshot.packet.events) {
+            const key=eventIdentity(event);requireValue(key && !latest.has(key),'Saved event identities are missing or duplicated.');latest.set(key,event);
+        }
+        return automatic.map(view=>{
+            const key=eventIdentity(view.canonical),event=latest.get(key);
+            if(!event)return view;
+            requireValue(event.revision.source_document_id===view.canonical.revision.source_document_id,'Saved event source differs.');
+            return {...eventView(event,view.source),methodLabel:event.revision.method_id,reviewTask:tasks.get(key),savedReview:true};
+        });
     }
     function assessmentBody(packet, reconstruction, layoutEvidence) {
         const raw = responseJSON.get(reconstruction);
@@ -276,7 +350,7 @@
         const original=result.extraction?.evidence || [];
         if (!result.layoutEvidence) return original;
         const aliases=new Set(Object.values(result.reconstruction?.execution_metadata?.capture_aliases || {}));
-        const extra=result.reconstruction?.canonical_output?.packet?.evidence || [];
+        const extra=[...(result.reconstruction?.canonical_output?.packet?.evidence || []),...(result.reviewEvidence || [])];
         return [...original,...extra.filter(s=>!aliases.has(s.evidence_id) && !original.some(o=>o.evidence_id===s.evidence_id))];
     }
     function renderEvidence(result) {
@@ -375,7 +449,7 @@
             const b=span.bbox;
             if (!b || b.coordinate_space!=="PIXELS" || span.page!==1 || b.x0<0 || b.y0<0 || b.x1>image.naturalWidth || b.y1>image.naturalHeight) continue;
             const box=node("button",null,"evidence-box");box.type="button";box.dataset.evidenceId=span.evidence_id;
-            box.setAttribute("aria-label",`Highlight evidence ${span.evidence_id}`);box.title=span.evidence_id;
+            box.setAttribute("aria-label","Inspect original source region");box.title="Source region; technical references are available in Advanced Details";
             Object.assign(box.style,{left:`${100*b.x0/image.naturalWidth}%`,top:`${100*b.y0/image.naturalHeight}%`,width:`${100*(b.x1-b.x0)/image.naturalWidth}%`,height:`${100*(b.y1-b.y0)/image.naturalHeight}%`});
             box.addEventListener("click",()=>{
                 highlightEvidence(span.evidence_id);
@@ -391,7 +465,7 @@
     }
     function filteredEvents(events, filter='all', search='', sort='time') {
         const query=search.trim().toLowerCase();
-        return uniqueEvents(events).filter(e=>(filter==='all' || (filter==='accepted' ? e.completeCandidate : filter==='review' ? !e.completeCandidate : e.status===filter)) &&
+        return uniqueEvents(events).filter(e=>(filter==='all' || (filter==='accepted' ? e.completeCandidate : filter==='review' ? needsStudentReview(e) : e.status===filter)) &&
             [e.subject,e.subjectName,e.lecturer,e.venue,e.section,e.type,e.date].join(' ').toLowerCase().includes(query))
             .sort((a,b)=>{
                 if (sort==='course') {const name=(a.subject || '').localeCompare(b.subject || '');if(name)return name;}
@@ -410,17 +484,26 @@
         return content.day_of_week ? ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][content.day_of_week]+' · Date not confirmed' : 'Day and date not confirmed';
     }
     function friendlyTime(value) {
+        if(value==='24:00')return '12:00 AM (next day)';
         const match=/^(\d{2}):(\d{2})$/.exec(value || '');
         return match ? `${Number(match[1])%12 || 12}:${match[2]} ${Number(match[1])<12?'AM':'PM'}` : 'Time not confirmed';
     }
     function eventRegions(event,result) {
         const observations=event.revision.observations;
         const observedIds=new Set(observations.flatMap(o=>o.evidence_ids));
+        if(result.layoutEvidence?.profile==='ocr-ruled-grid-s2a-v1') {
+            const anchors=new Set(observations.filter(o=>['course_code','course_name'].includes(o.field_name)).flatMap(o=>o.evidence_ids));
+            const spans=(result.reconstruction?.canonical_output?.packet?.evidence || []).filter(s=>anchors.has(s.evidence_id) && s.locator?.startsWith('cell:') && s.bbox?.coordinate_space==='PIXELS');
+            const unique=[...new Map(spans.map(s=>[`${s.page}:${JSON.stringify(s.bbox)}`,s])).values()];
+            if(unique.length!==1)return [];
+            const span=unique[0],page=result.layoutEvidence.pages.find(p=>p.page===span.page);
+            return page?[{page,region:{region_id:span.evidence_id,bbox:span.bbox,source_cell:true}}]:[];
+        }
         const sourceOwners=new Set((result.reconstruction?.canonical_output?.packet?.evidence || []).filter(s=>observedIds.has(s.evidence_id) && s.locator?.startsWith('region:')).map(s=>s.locator.slice('region:'.length)));
-        if(sourceOwners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>sourceOwners.has(r.region_id)).map(region=>({page,region})));
+        if(sourceOwners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>(page.regions || []).filter(r=>sourceOwners.has(r.region_id)).map(region=>({page,region})));
         const owners=new Set(observations.flatMap(o=>(o.transformations || []).filter(t=>t.startsWith('rt4-owner-region:')).map(t=>t.slice('rt4-owner-region:'.length))));
-        if(owners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>owners.has(r.region_id)).map(region=>({page,region})));
-        const regionsFor=ids=>(result.layoutEvidence?.pages || []).flatMap(page=>page.regions.filter(r=>
+        if(owners.size===1)return (result.layoutEvidence?.pages || []).flatMap(page=>(page.regions || []).filter(r=>owners.has(r.region_id)).map(region=>({page,region})));
+        const regionsFor=ids=>(result.layoutEvidence?.pages || []).flatMap(page=>(page.regions || []).filter(r=>
             page.words.some(w=>w.region_id===r.region_id && ids.has(w.evidence_id))).map(region=>({page,region})));
         // A spacing witness from another class is supporting provenance, not
         // ownership of that class's image. Prefer the course anchor's region.
@@ -436,7 +519,7 @@
     }
     function regionReadings(page,region) {
         const groups=new Map();
-        for(const w of page.words.filter(w=>w.region_id===region.region_id)) {
+        for(const w of page.words.filter(w=>region.source_cell ? w.bbox.x0>=region.bbox.x0 && w.bbox.x1<=region.bbox.x1 && w.bbox.y0>=region.bbox.y0 && w.bbox.y1<=region.bbox.y1 : w.region_id===region.region_id)) {
             const key=w.capture_route+' / '+w.parent_line_id;
             if(!groups.has(key))groups.set(key,{route:w.capture_route,words:[]});groups.get(key).words.push(w);
         }
@@ -481,7 +564,7 @@
             const hidden=displayedEvents(result).length>0;
             const failed=['FAILED','EXECUTION_ABORTED'].some(status=>Object.values(result.stages || {}).includes(status));
             const message=result.busy?'Reading your timetable…':failed?
-                'We couldn’t read this file. Try again or choose a clearer image.':hidden?
+                (result.failureMessage || 'We couldn’t read this file. Try again or choose a clearer image.'):hidden?
                 'No classes match this view. Clear your search or choose All classes.':
                 'No classes were detected in this image.';
             const empty=node('div',null,'empty-list');empty.append(node('p',message));
@@ -491,7 +574,7 @@
                 const retry=node('button','Retry','secondary-button');retry.type='button';
                 retry.disabled=!result.file;retry.onclick=()=>global.document.getElementById('retryUpload')?.click();empty.append(retry);
                 empty.append(details('Processing details',{stages:result.stages || {},diagnostics:result.diagnostics || [],
-                    regions:result.layoutEvidence?.pages?.reduce((n,p)=>n+p.regions.length,0) || 0,
+                    regions:result.layoutEvidence?.pages?.reduce((n,p)=>n+(p.regions?.length || 0),0) || 0,
                     reconstruction:result.reconstruction?.canonical_output?.layout?.issues || []}));
             }
             container.append(empty);return;
@@ -501,7 +584,8 @@
             const card=node('article',null,'event-card class-card');card.dataset.candidateId=event.candidate_id;
             const body=node('div',null,'event-main'),heading=node('div',null,'class-heading');
             heading.append(node('strong',view.subject),node('span',view.type,'class-type'));
-            const status=node('span',view.completeCandidate?'All required fields detected':'Needs review','class-status'+(view.completeCandidate?'':' needs-review'));
+            const needsReview=needsStudentReview(view);
+            const status=node('span',needsReview?'Needs review · Still needs confirmation':'No outstanding field checks','class-status'+(needsReview?' needs-review':''));
             body.append(heading,node('p',friendlyDate(c),'class-date'),node('p',friendlyTime(c.start_time)+' – '+friendlyTime(c.end_time),'class-time'));
             const facts=node('div',null,'class-details');
             facts.append(node('span','Venue: '+(c.location || 'Not confirmed')));
@@ -521,10 +605,10 @@
             if(eventRegions(event,result).some(({region})=>regionDetails.some(d=>d.region_id===region.region_id && d.issues?.includes('RED_REGION_REQUIRES_CLASH_OR_HOLIDAY_REVIEW'))))
                 facts.append(node('p','Red class block — check for a clash or public holiday.','uncertain-field'));
             const corrections=eventRegions(event,result).flatMap(({region})=>regionDetails.find(d=>d.region_id===region.region_id)?.ocr_corrections || []);
-            if(corrections.some(c=>c.status==='AMBIGUOUS'))facts.append(node('p','Possible OCR error — please check','uncertain-field'));
+            if(!humanCorrected(event) && corrections.some(c=>c.status==='AMBIGUOUS'))facts.append(node('p','Possible OCR error — please check','uncertain-field'));
             body.append(facts);
-            const footer=node('div',null,'class-footer');footer.append(status,node('span',verified(event)?'Verification recorded':'Not yet verified','verification-note'));
-            const inspect=node('button','View source','text-button');inspect.type='button';inspect.addEventListener('click',()=>inspectEvent(event,result,inspect));footer.append(inspect);body.append(footer);
+            const footer=node('div',null,'class-footer');footer.append(node('span',humanCorrected(event)?'Human corrected':'Automatically extracted','class-status'),status,node('span',independentlyVerified(event)?'Independently verified':'Not yet verified independently','verification-note'));
+            const inspect=node('button','View source','text-button');inspect.type='button';inspect.addEventListener('click',()=>inspectEvent(event,result,inspect));footer.append(inspect);const edit=node('button','Edit class','text-button');edit.type='button';edit.addEventListener('click',()=>global.document.dispatchEvent(new global.CustomEvent('stair-edit-class',{detail:{candidateId:event.candidate_id}})));footer.append(edit);body.append(footer);
             const technical=node('details',null,'class-technical');technical.append(node('summary','View OCR details'));
             for(const {page,region} of eventRegions(event,result))technical.append(details('Original OCR text and confidence',regionReadings(page,region)));
             if(corrections.length) {
@@ -557,5 +641,5 @@
     }
 
     global.STAIRUpload = Object.freeze({MAX_BYTES,PIPELINES,Controller,validateFile,validatePacket,validateExtraction,validateReconstruction,
-        validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,uniqueEvents,filteredEvents,verified,eventRegions,friendlyDate,friendlyTime,inspectEvent,expandSource,diagnostic,reviewIngestBody,highlightEvidence});
+        eventIdentity,humanCorrected,independentlyVerified,needsStudentReview,mergeSavedViews,readerConfiguration,validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,uniqueEvents,filteredEvents,verified,eventRegions,friendlyDate,friendlyTime,inspectEvent,expandSource,diagnostic,friendlyFailure,reviewIngestBody,highlightEvidence});
 })(globalThis);
