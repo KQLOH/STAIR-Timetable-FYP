@@ -42,7 +42,7 @@ def attach(case):
     setattr(S3bFrontendTests,'test_'+case,test)
 
 
-for case in ['public_default_deny','public_canonical_details','scoped_queue_and_task','supported_correction_revision_and_history',
+for case in ['human_assertion_payload_contains_explicit_linked_reading','assertion_checked_after_staging_requires_explicit_replace','public_default_deny','public_canonical_details','scoped_queue_and_task','supported_correction_revision_and_history',
     'revalidation_and_new_preview','wrong_operator_controls_disabled','missing_evidence_and_field_states',
     'disposition_reason_remains_usable_after_revalidation',
     'conflicting_and_unresolved_states','human_assertion_requires_explicit_original_evidence','expiry_clears_private_form_and_history',

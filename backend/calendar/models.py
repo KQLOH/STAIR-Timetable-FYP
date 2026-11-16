@@ -42,6 +42,11 @@ class CalendarContext(ContractModel):
     lineage:tuple[Lineage,...]=()
 
 
+# S2b keeps original lines, crop words and derived spans. A valid page can
+# exceed 512 spans; retain the complete evidence graph within bounded diagnostics.
+MAX_DIAGNOSTIC_EVIDENCE_SPANS = 4096
+
+
 class CalendarInput(ContractModel):
     packet:CanonicalTimetable
     reconstruction_status:Literal['COMPLETE_FINITE_SEARCH','SEARCH_INCOMPLETE','EXECUTION_ABORTED','NOT_PROVIDED']='NOT_PROVIDED'
@@ -50,7 +55,7 @@ class CalendarInput(ContractModel):
 
     @model_validator(mode='after')
     def bounded(self):
-        if len(self.packet.events)>100 or len(self.packet.evidence)>512 or sum(len(s.raw_text) for s in self.packet.evidence)>500000:
+        if len(self.packet.events)>100 or len(self.packet.evidence)>MAX_DIAGNOSTIC_EVIDENCE_SPANS or sum(len(s.raw_text) for s in self.packet.evidence)>500000:
             raise ValueError('Calendar development input limits exceeded')
         return self
 

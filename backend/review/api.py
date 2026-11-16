@@ -24,6 +24,9 @@ def _no_cache(response:Response):
 
 router=APIRouter(dependencies=[Depends(_no_cache)])
 MAX_BODY_BYTES=2*1024*1024
+# Full bound S2b graphs include source, word and derived evidence. Only the
+# authenticated queue-ingestion route accepts this larger bounded envelope.
+MAX_REVIEW_INGEST_BYTES=8*1024*1024
 
 
 @dataclass(frozen=True)
@@ -54,13 +57,13 @@ def _bridge(request):
     return bridge.store,principal
 
 
-async def _body(request,model):
+async def _body(request,model,*,max_bytes=MAX_BODY_BYTES):
     if request.headers.get('content-type','').split(';')[0].strip().lower()!='application/json':
         raise HTTPException(415,'JSON_BODY_REQUIRED')
     body=bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body)>MAX_BODY_BYTES: raise HTTPException(413,'REVIEW_REQUEST_TOO_LARGE')
+        if len(body)>max_bytes: raise HTTPException(413,'REVIEW_REQUEST_TOO_LARGE')
     try: return model.model_validate_json(body)
     except (ValidationError,ValueError): raise HTTPException(422,'INVALID_REVIEW_CONTRACT') from None
 
@@ -99,7 +102,8 @@ async def policy_assess(request:Request):
 @router.post('/api/review/ingest')
 async def ingest(request:Request):
     store,principal=_bridge(request)
-    payload=await _body(request,AssessmentInput)
+    await _invoke(store.authority.require,principal,'queue')
+    payload=await _body(request,AssessmentInput,max_bytes=MAX_REVIEW_INGEST_BYTES)
     ids=await _invoke(store.ingest,payload,principal)
     return {'task_ids':ids}
 
@@ -117,7 +121,7 @@ async def session(request:Request):
         'permissions':sorted(principal.permissions),'mode':principal.mode,
         'source_bindings':sorted(principal.source_bindings) if principal.source_bindings is not None else None,
         'scoped_workflow_enabled':principal.source_bindings is not None,
-        'storage':'PROCESS_LOCAL_NOT_RESTART_PERSISTENT','purpose':'APPLICATION_REPAIR_NOT_GOLD',
+        'storage':store.storage_kind,'purpose':'APPLICATION_REPAIR_NOT_GOLD',
         'correction_contract':{'fields':list(EventContent.model_fields),'states':[s.value for s in FieldState],
             'max_fields':19,'max_evidence_ids':20,'max_raw_characters':10000,'max_reason_characters':2000,
             'human_assertions':'EXPLICIT_LINKED_SOURCE_READING_NOT_ORIGINAL_OCR_NOT_GOLD'}}

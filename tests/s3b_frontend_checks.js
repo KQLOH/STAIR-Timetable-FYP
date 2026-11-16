@@ -61,6 +61,24 @@ async function begin(){await controller.refreshQueue();await controller.selectTa
 function change(){get('reviewField').value='location';controller.populateField();get('reviewFieldState').value='PRESENT';get('reviewRawValue').value='A102';get('reviewNormalizedValue').value='A102';
     controller.selectedRefs=new Set(fixture.correction_body.fields[0].evidence_ids);get('reviewCorrectionReason').value='Read the printed synthetic amendment';controller.addChange();}
 const cases={
+    async human_assertion_payload_contains_explicit_linked_reading(){
+        await begin();change();get('reviewHumanAssertion').checked=true;
+        get('reviewJustification').value='Explicit synthetic original-source reading';controller.addChange();
+        const staged=controller.pending.get('location');assert(staged.human);
+        assert.equal(staged.human.raw_text,'A102');
+        await controller.submit();const request=calls.find(c=>c.path.endsWith('/corrections')).body;
+        assert.equal(request.human_evidence.length,1);
+        assert.equal(request.fields[0].evidence_ids[0],request.human_evidence[0].evidence_id);
+        assert.deepEqual(request.human_evidence[0].source_evidence_ids,fixture.correction_body.fields[0].evidence_ids);
+        assert.equal(request.human_evidence[0].page,1);
+    },
+    async assertion_checked_after_staging_requires_explicit_replace(){
+        await begin();change();assert.equal(controller.pending.get('location').human,null);
+        get('reviewHumanAssertion').checked=true;get('reviewJustification').value='Explicit synthetic reading';
+        assert.equal(controller.pending.get('location').human,null);
+        controller.addChange();assert(controller.pending.get('location').human);
+        assert(get('reviewPendingChanges').textContent.includes('explicit human assertion, not original OCR'));
+    },
     async public_default_deny(){controller.transport=null;await controller.refreshQueue();assert.equal(controller.session,null);assert(get('reviewCorrectionControls').disabled);assert(get('reviewWorkflowStatus').textContent.includes('not configured'));assert.equal(calls.length,0);},
     async public_canonical_details(){controller.inspectPublic();assert.equal(opened,1);assert(get('reviewEventDetails').textContent.includes('Normalized: A101'));assert(get('reviewEventDetails').textContent.includes('Raw: A101'));assert(get('reviewCorrectionControls').disabled);assert.equal(calls.length,0);},
     async scoped_queue_and_task(){await controller.refreshQueue();assert(get('reviewAuthorization').textContent.includes('TEST_ONLY'));assert(get('reviewQueue').textContent.includes('A101'));await controller.selectTask(fixture.id);assert(get('reviewTaskStatus').textContent.includes('ASSIGNED_REVIEW'));assert(get('reviewCorrectionControls').disabled);await controller.transition('start');assert(!get('reviewCorrectionControls').disabled);},

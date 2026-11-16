@@ -39,6 +39,8 @@ class _Run:
 
 
 class ReviewStore:
+    storage_kind = 'PROCESS_LOCAL_NOT_RESTART_PERSISTENT'
+
     def __init__(self,authority,clock=utc_now):
         self.authority,self.clock=authority,clock
         self._tasks={}; self._runs={}; self._lock=RLock()
@@ -117,7 +119,7 @@ class ReviewStore:
             views.sort(key=lambda t:(t.created_at,str(t.task_id)))
             return {'total':len(views),'states':{s.value:sum(t.state==s for t in views) for s in ReviewState},
                 'tasks':[v.model_dump(mode='json') for v in views[offset:offset+limit]],
-                'next_offset':offset+limit if offset+limit<len(views) else None,'storage':'PROCESS_LOCAL_NOT_RESTART_PERSISTENT'}
+                'next_offset':offset+limit if offset+limit<len(views) else None,'storage':self.storage_kind}
 
     def assign(self,task_id,assignee,expected_etag,principal):
         with self._lock:
@@ -287,4 +289,4 @@ class ReviewStore:
             return {'packet':packet.model_dump(mode='json'),'reconstruction_context':run.context.model_dump(mode='json') if run.context else {},
                 'tasks':[v.model_dump(mode='json') for v in visible],
                 'scope':'AUTHORIZED_VISIBLE_TASKS_ONLY','complete_schedule_verified':False,
-                'dependency_digest':self._dependency(run) if run.context else None,'storage':'PROCESS_LOCAL_NOT_RESTART_PERSISTENT'}
+                'dependency_digest':self._dependency(run) if run.context else None,'storage':self.storage_kind}

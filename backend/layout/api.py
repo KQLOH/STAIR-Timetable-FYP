@@ -32,9 +32,18 @@ class BlockAssessmentInput(LayoutAssessmentInput):
 
 @router.post('/api/layout/s2b/assess')
 async def block_assessment(request:Request):
-    from backend.layout.block_grid import assess_blocks
+    from backend.layout.block_grid import assess_blocks, reconstruct_blocks
     payload=await _body(request,BlockAssessmentInput)
     if payload.reconstruction_context!=Context():raise HTTPException(422,'S2B_CONTEXT_UNSUPPORTED')
+    # A digest-only envelope avoids returning duplicated OCR evidence in the
+    # request. Recompute all content from the bound source; retain body caps.
+    if set(payload.reconstruction)=={'canonical_digest'}:
+        try:
+            expected,_,_=await run_in_threadpool(reconstruct_blocks,payload.source_packet,payload.layout_evidence,payload.decoder_mode)
+        except ValueError as error:raise HTTPException(422,str(error)) from None
+        if expected.get('canonical_digest')!=payload.reconstruction['canonical_digest']:
+            raise HTTPException(422,'S2B_SOURCE_OR_RECONSTRUCTION_MISMATCH')
+        payload=payload.model_copy(update={'reconstruction':expected})
     try:decisions=await run_in_threadpool(assess_blocks,payload.source_packet,payload.layout_evidence,payload.reconstruction,payload.decoder_mode)
     except ValueError as error:raise HTTPException(422,str(error)) from None
     return {'profile':'m5-development-v1','input_profile':'ocr-block-grid-s2b-v1',

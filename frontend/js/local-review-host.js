@@ -1,0 +1,52 @@
+/* Loaded only by the opt-in local Windows host; no credentials in web storage. */
+(() => {
+    'use strict';
+    const origin = 'http://127.0.0.1:8020';
+    if (location.origin !== origin) return;
+    document.addEventListener('DOMContentLoaded', () => {
+        const panel = document.createElement('section');
+        panel.className = 'panel';panel.setAttribute('aria-label', 'Local student review access');
+        const title = document.createElement('h3');title.textContent = 'Review your own timetable';
+        const note = document.createElement('p');note.textContent = 'Your Windows logon and an explicit confirmation in the local host console authorize only the selected source. After a restart, reconnect and reselect the matching original file to inspect image crops.';
+        const request = document.createElement('button');request.type = 'button';request.className = 'button secondary';request.id = 'requestLocalReview';request.textContent = 'Request access to this timetable';
+        const connect = document.createElement('button');connect.type = 'button';connect.className = 'button secondary';connect.id = 'connectLocalReview';connect.textContent = 'Connect approved review';connect.disabled = true;
+        const status = document.createElement('p');status.id = 'localReviewStatus';status.setAttribute('role', 'status');status.textContent = 'Not authorized. Upload your original timetable first.';
+        let binding = '', sourceKey = '';
+        request.addEventListener('click', async () => {
+            request.disabled = true;
+            try {
+                const source = reviewSource().packet?.source;
+                if (!source || !state.upload?.file) throw Error('Upload the original file before requesting access.');
+                reviewController.forget();binding = '';connect.disabled = true;
+                const response = await fetch(origin + '/__local_review__/pending', {method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+                    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source_document_id: source.source_document_id, content_sha256: source.content_sha256})});
+                if (!response.ok) throw Error('The local host refused this request.');
+                const pending = await response.json();
+                if (pending.authorized !== false || !/^[A-Za-z0-9_-]{43}$/.test(pending.binding) || !/^[A-Za-z0-9_-]{24}$/.test(pending.nonce)) throw Error('Invalid pending channel.');
+                binding = pending.binding;sourceKey = source.source_document_id + ':' + source.content_sha256;
+                connect.disabled = false;
+                status.textContent = 'In your local host console, personally run: authorize ' + pending.nonce + ' "<path to the original timetable file>" within 120 seconds. Source SHA-256: ' + source.content_sha256 + '. This does not submit any field correction.';
+            } catch (error) {status.textContent = error.message;}
+            finally {request.disabled = false;}
+        });
+        connect.addEventListener('click', async () => {
+            const source = reviewSource().packet?.source;
+            if (!binding || sourceKey !== source?.source_document_id + ':' + source?.content_sha256) {
+                status.textContent = 'The source changed. Request fresh access.';return;
+            }
+            const credential = binding;
+            reviewController.attachTrustedHostTransport(async (url, options = {}) => {
+                const target = new URL(url), method = (options.method || 'GET').toUpperCase();
+                if (target.origin !== origin || !target.pathname.startsWith('/api/review/') || target.username || target.password || target.hash || target.href.includes('%') || !['GET', 'POST'].includes(method)) throw Error('Review transport refused.');
+                const headers = new Headers(options.headers || {});
+                for (const name of ['Authorization', 'Cookie', 'X-STAIR-Review-Binding']) if (headers.has(name)) throw Error('Credential replacement refused.');
+                headers.set('X-STAIR-Review-Binding', credential);
+                return fetch(target.href, {...options, method, headers, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
+            });
+            await reviewController.refreshQueue();
+            status.textContent = reviewController.session ? 'Authorized for this source. Queue it once, claim your task and start review. Saved tasks and history survive restart; corrections require your explicit submission.' : 'No authorization confirmed. Check the host console; request fresh access if expired.';
+        });
+        panel.append(title, note, request, connect, status);
+        document.querySelector('.main-area').prepend(panel);
+    });
+})();

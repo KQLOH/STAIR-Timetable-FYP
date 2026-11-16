@@ -1,47 +1,68 @@
-# Complete application setup
+# Setup for the selected working-system branch
 
-Use Python 3.12. The verified dependency constraints target Windows/Python 3.12; another OS needs its own verification. Install Node for the JavaScript regression checks. No university account, private dataset or historical journal is required for synthetic development.
+The README in the branch being reviewed is the primary setup guide. The repository's default branch can lag the owner's unpublished local work. Clone the **published branch supplied by the owner**, not an assumed historical release branch.
+
+After the proposed supervisor branch has actually been approved and published, an example checkout is:
 
 ```powershell
-git clone --branch feature/complete-v1-handover https://github.com/KQLOH/STAIR-Timetable-FYP.git
-cd STAIR-Timetable-FYP
-# Run this after the owner publishes the full-source feature branch.
-# After it is merged, ordinary main checkout can be used instead.
-python -m venv .venv
+git clone --branch codex/supervisor-review-20261116 https://github.com/KQLOH/STAIR-Timetable-FYP.git
+Set-Location STAIR-Timetable-FYP
+```
+
+That branch name is a publication proposal until the owner confirms it exists. If a different branch is shared, substitute that exact name. A supervisor can inspect a public branch in GitHub without cloning or using private timetable data.
+
+## Dependencies
+
+Windows with Python 3.12 is the target for the local Windows-identity/DPAPI review host. Node runs frontend/security checks. Install Tesseract with English data separately; binaries and OCR models are not shipped.
+
+```powershell
+py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -B -m pip install --only-binary=:all: -r requirements.txt -r requirements-ocr.txt -r requirements-test.txt -c requirements-team-lock.txt
 .\.venv\Scripts\python.exe -B -m pip check
 node --version
-```
-
-Install Tesseract separately from a trusted distribution with English data. No executable/models are shipped. Set an explicit path in the current terminal; this does not edit system PATH:
-
-```powershell
-$env:STAIR_TESSERACT_CMD = 'C:\Tools\Tesseract-OCR\tesseract.exe'
+$env:STAIR_TESSERACT_CMD = 'C:\Program Files\Tesseract-OCR\tesseract.exe'
 & $env:STAIR_TESSERACT_CMD --version
 & $env:STAIR_TESSERACT_CMD --list-langs
 ```
 
-Adjust the example path to the actual local installation. `eng` must be listed. Alternatively create an untracked `config/ocr-runtime.local.json` from the example. Never commit a personal path or copy another person's local configuration. OCR absence returns an explicit diagnostic and some live-OCR tests skip; native PDF text never substitutes for the registered B1/B2 OCR route.
+If `py` is unavailable, use your actual Python 3.12 executable for venv creation. Adjust the Tesseract path to the actual installation. It must list `eng`. The environment variable affects only this terminal; keep it set in the terminal running the host/backend. An untracked `config/ocr-runtime.local.json` may also be created from the public example. Never copy another machine's personal configuration or credentials.
 
-In terminal one (with the OCR override if needed):
+## Windows student review
 
 ```powershell
+whoami /user
+.\.venv\Scripts\python.exe -B tools/run_student_review.py
+```
+
+Open http://127.0.0.1:8020. Use your own interactive Windows console and source file. Follow [source authorization, correction and restart](local-student-review.md). No university password is needed for local uploaded-file review. Windows account authentication is not TAR UMT SSO. The ordinary server does not automatically grant authority. Type `quit` to stop.
+
+Do not delete existing storage to fix a startup problem. The host creates absent user-local directories securely, rejects unsafe paths/reparse points, and fails closed on corruption/permission failures. It prints the real encrypted storage path, including Store Python redirection. Records are not portable plaintext exports and are never a shipped research dataset.
+
+## Read-only demo
+
+Use two terminals from this checkout:
+
+```powershell
+# Terminal one; keep the Tesseract environment variable here.
 .\.venv\Scripts\python.exe -B -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-In terminal two:
-
 ```powershell
+# Terminal two; serve only the frontend directory.
 .\.venv\Scripts\python.exe -B -m http.server 5500 --bind 127.0.0.1 --directory frontend
 ```
 
-Open http://127.0.0.1:5500 and http://127.0.0.1:8000/docs. The frontend API base and backend CORS agree on these ports. Serve only `frontend/`, never the repository/data root. If a port is occupied, identify its owner; do not terminate unrelated processes or change the API contract silently.
+Open http://127.0.0.1:5500 and select **Try sample**. Uploading your own source exercises extraction. Corrections remain blocked without the separate approved review host. Native PDF text does not silently replace the registered baseline OCR condition. API docs: http://127.0.0.1:8000/docs. Stop with Ctrl+C in each server terminal.
+
+Do not bind these local prototypes to `0.0.0.0` or change ports/origins casually. If a port is busy, identify its owner and close only your own prior STAIR host. Never kill another person's process for setup.
+
+## Regression and security checks
 
 ```powershell
 .\.venv\Scripts\python.exe -B tools/run_public_tests.py
 .\.venv\Scripts\python.exe -B -m starter_tools.markdown_links --root .
 ```
 
-The test runner executes public unittest discovery plus the independent frontend transport security check. It creates fresh synthetic temporary outputs only. Historical S4B host/tests are excluded explicitly; never recreate their retained inputs or enroll a live browser just to run onboarding tests. Stop the two servers with Ctrl+C in their own terminals.
+The test runner discovers current synthetic unittest modules and executes the independent Node transport security check. The JSON result reports failures, errors and skips separately. No private labels, retained journals or real review approval are required. Windows-only tests skip on unsupported operating systems; live OCR checks can skip if Tesseract is absent. Such runs are not equivalent to the fully provisioned Windows result.
 
-Fresh clones must not be expected to contain Gold/audit records or real university response samples. Protected review and calendar actions stay denied without a separately authorized host; the ordinary website does not grant itself authority. No real calendar integration is enabled by setup.
+See [supervisor publication](supervisor-review.md), [scope](scope-and-status.md) and [privacy](public-safety.md). Historical manifests and earlier results remain historical; they are not a current accuracy claim.

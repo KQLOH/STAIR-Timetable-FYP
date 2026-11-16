@@ -16,7 +16,7 @@ from backend.layout.block_models import (BlockPage, BlockWord, ColorRegion, PROF
     MAX_PIXELS, MAX_TOTAL_PIXELS, MAX_PAGES, MAX_REGIONS, MAX_DOCUMENT_REGIONS,
     MAX_WORDS, MAX_DOCUMENT_WORDS, MAX_OPERATIONS)
 
-DETECTION_CONFIG={'quantization_bits':5,'minimum_chroma':24,'minimum_fill':.58,
+DETECTION_CONFIG={'quantization_bits':5,'segmentation':'dominant-channel-chromatic-components-v2','minimum_chroma':24,'minimum_relative_chroma':.35,'minimum_fill':.58,
     'minimum_area_fraction':.00025,'minimum_side_fraction':.012,
     'crop_scale':4,'crop_border_source_pixels':6,'max_operations':MAX_OPERATIONS,
     'bridge_erosion_radius_fraction':.001,'minimum_proposal_fill':.20,
@@ -59,7 +59,16 @@ def detect_regions(image,source_id,page):
     rgb=np.asarray(image.convert('RGB'));h,w,_=rgb.shape
     chroma=rgb.max(axis=2).astype(np.int16)-rgb.min(axis=2)
     q=rgb.astype(np.int32)//8
-    keys=np.where(chroma>=DETECTION_CONFIG['minimum_chroma'],1+q[:,:,0]*1024+q[:,:,1]*32+q[:,:,2],0)
+    # JPEG perturbs RGB within a flat fill. Segment by dominant color channel,
+    # retaining a measured representative RGB key for provenance. Neutral grid
+    # separators remain gaps; no closing across adjacent rectangles is applied.
+    family=rgb.argmax(axis=2)
+    keys=np.zeros((h,w),dtype=np.int32)
+    for channel in range(3):
+        mask=(chroma>=np.maximum(DETECTION_CONFIG['minimum_chroma'],rgb.max(axis=2)*DETECTION_CONFIG['minimum_relative_chroma'])) & (family==channel)
+        if mask.any():
+            representative=np.median(q[mask],axis=0).astype(int)
+            keys[mask]=1+representative[0]*1024+representative[1]*32+representative[2]
     original_keys=keys
     radius=max(1,round(min(h,w)*.001))
     # Remove only narrow color bridges. This does not split a genuinely solid
@@ -103,12 +112,16 @@ def detect_regions(image,source_id,page):
         coverage=area/((x1-x0)*(y1-y0))
         if coverage<DETECTION_CONFIG['minimum_proposal_fill']:continue
         pixels=original_keys[y0:y1,x0:x1]==key
-        border=min(float(pixels[0,:].mean()),float(pixels[-1,:].mean()),float(pixels[:,0].mean()),float(pixels[:,-1].mean()))
+        # JPEG can stagger a boundary by a pixel. Median coverage over a thin
+        # inner band tolerates that fringe, but not a missing rectangular side.
+        band=min(3,(y1-y0)//4,(x1-x0)//4)
+        border=min(float(np.median(pixels[:band,:].mean(axis=1))),float(np.median(pixels[-band:,:].mean(axis=1))),
+                   float(np.median(pixels[:,:band].mean(axis=0))),float(np.median(pixels[:,-band:].mean(axis=0))))
         boundary='RECTANGULAR' if coverage>=DETECTION_CONFIG['minimum_fill'] and border>=.90 else 'AMBIGUOUS_COMPONENT'
         seed={'source':source_id,'page':page,'box':[x0,y0,x1,y1],'color_key':key,'method':'s2b.1'}
         regions.append(ColorRegion(region_id='s2b-region-'+digest(seed),
             bbox=BoundingBox(x0=x0,y0=y0,x1=x1,y1=y1,coordinate_space='PIXELS'),
-            pixel_color_key=key,fill_coverage=coverage,boundary_status=boundary,inner_margin_pixels=radius))
+            geometry_method='chromatic-components-s2b-v2',pixel_color_key=key,fill_coverage=coverage,boundary_status=boundary,inner_margin_pixels=radius))
     regions.sort(key=lambda r:(r.bbox.y0,r.bbox.x0,r.region_id))
     if len(regions)>MAX_REGIONS:raise ValueError('S2B_REGION_CAP')
     vs,hs=structural_rules(rgb)
@@ -197,6 +210,17 @@ class BlockCollector(list):
                 diagnostics.append('REGION_OCR_FAILED:'+(region_id or route)+':'+error.code);return
             b=box.bbox if hasattr(box,'bbox') else box
             local_transform={**local_transform,'parent_page_transform':transform,'runtime':local_runtime}
+            # OCR may hallucinate a border glyph in added padding. It is not a
+            # source-owned word: exclude it before creating evidence, never
+            # relax the reconstruction ownership validator.
+            if region_id:
+                valid=[i for i in range(len(local['text'])) if
+                    local['left'][i]>=24 and local['top'][i]>=24 and
+                    local['left'][i]+local['width'][i]<=24+int(b.x1-b.x0)*4 and
+                    local['top'][i]+local['height'][i]<=24+int(b.y1-b.y0)*4]
+                if len(valid)<len(local['text']):
+                    diagnostics.append('CROP_PADDING_TOKENS_EXCLUDED:'+region_id)
+                local={k:[v[i] for i in valid] for k,v in local.items()}
             words.extend(capture_words(source_id,page,local,line_regions,route,local_transform,
                                        region_id,(b.x0-6,b.y0-6),4))
             if len(words)>MAX_WORDS:raise ValueError('S2B_WORD_CAP')
@@ -209,9 +233,13 @@ class BlockCollector(list):
                 local_ocr(region,'s2b-region-light-text-ocr-v2',region.region_id,white_text=True)
         # Source-derived context crops preserve separately observed OCR readings.
         # No character correction or lexical substitution is performed.
+        session_regions=[r for r in regions if any(re.search(r'[A-Z]{2,}[- ]*\d{3,4}',w.text,re.I) for w in words if w.region_id==r.region_id)]
         clocks=[w for w in words if w.capture_route==adapter and
             re.fullmatch(r'\d{1,2}[:.]\d{2}',w.text.strip()) and
-            w.bbox.y1<=min((r.bbox.y0 for r in regions),default=0)]
+            w.bbox.y1<=min((r.bbox.y0 for r in session_regions),default=0)]
+        # Mobile chrome clocks and unrelated labels are not a timetable axis.
+        # Require a visual band of at least three independently observed clocks.
+        clocks=[w for w in clocks if sum(abs(v.bbox.y0-w.bbox.y0)<=max(2,(w.bbox.y1-w.bbox.y0)*.6) for v in clocks)>=3]
         header_rules=()
         if len(clocks)>=6 and regions:
             height=max(w.bbox.y1-w.bbox.y0 for w in clocks)
@@ -225,9 +253,10 @@ class BlockCollector(list):
             y0=max(0,int(min(w.bbox.y0 for w in clocks)-height*.3))
             y1=min(image.height,int(max(w.bbox.y1 for w in clocks)+height*.3))
             header_rules=structural_rules(np.asarray(image.convert('RGB'))[y0:y1],minimum_run=8)[0]
+            header_rules=tuple(x for x in header_rules if not any(w.bbox.x0-1<=x<=w.bbox.x1+1 for w in clocks))
             first_clock=min(w.bbox.x0 for w in clocks)
             left=max((v for v in header_rules if v<first_clock),default=min(r.bbox.x0 for r in regions))
-            bands=sorted(set((r.bbox.y0,r.bbox.y1) for r in regions))
+            bands=sorted(set((r.bbox.y0,r.bbox.y1) for r in session_regions))
             for y0,y1 in bands:
                 if left>10:
                     margin=max(2,round(height*.5))

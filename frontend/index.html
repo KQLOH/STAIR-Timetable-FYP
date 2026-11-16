@@ -259,6 +259,7 @@
             <h3>Read your timetable</h3>
             <p>For a colored weekly grid, use the recommended block reader.</p>
             <label><input id="runBlockGridS2b" type="checkbox"> RT2 Block OCR · Recommended</label>
+            <label><input id="runContextCorrection" type="checkbox" checked> Context-aware OCR correction (RT4, with Block OCR)</label>
             <details class="extraction-advanced"><summary>Advanced extraction settings</summary>
             <label for="extractionPipeline">Extraction pipeline</label>
             <select id="extractionPipeline">
@@ -375,9 +376,10 @@
         </div>
         <details class="panel review-workflow" aria-labelledby="reviewWorkflowTitle">
           <summary id="reviewWorkflowTitle">Advanced review workspace</summary>
-          <p id="reviewAuthorization" role="status">Public read-only mode. No trusted operator is enrolled. Application correction is separate from research Gold and calendar approval.</p>
+          <p id="reviewAuthorization" role="status">You can inspect class records here. Editing is unavailable without an authorized reviewer session. This does not verify classes or approve calendar sync.</p>
           <div class="review-workflow-actions">
-            <label>Current source candidate<select id="reviewPublicCandidate" aria-label="Current source candidate"></select></label>
+            <select id="reviewPublicCandidate" aria-label="Current source candidate" hidden></select>
+            <fieldset class="review-candidate-picker"><legend>Select a class record</legend><div id="reviewCandidateChoices"></div></fieldset>
             <button class="button secondary" id="inspectCanonical" type="button" disabled>Inspect canonical details</button>
             <button class="button secondary" id="loadReviewQueue" type="button">Open authorized queue</button>
             <button class="button secondary" id="ingestReviewSource" type="button" disabled>Queue current source</button>

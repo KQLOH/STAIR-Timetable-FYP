@@ -192,7 +192,9 @@ async def extract_uploaded_timetable(request: Request, pipeline: str = "evidence
     except ValueError as error:
         if layout_profile:
             prefix='S2B' if layout_profile=='ocr-block-grid-s2b-v1' else 'S2A'
-            raise HTTPException(422, prefix+'_EXTRACTION_REJECTED: unsupported input or bounded evidence limit exceeded') from None
+            reason=str(error)
+            safe=reason if reason.startswith(prefix+'_') and all(c.isupper() or c=='_' or c.isdigit() for c in reason) else prefix+'_EXTRACTION_REJECTED'
+            raise HTTPException(422, safe+': unsupported input or bounded evidence limit exceeded') from None
         raise HTTPException(status_code=422, detail="Invalid extracted event/evidence contract.") from None
     if layout_profile:return packet
     return {"success": True, "pipeline": pipeline, "data": packet.model_dump(mode="json")}

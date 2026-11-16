@@ -1,3 +1,5 @@
+> Historical integration checklist. For the current working-system review, use [supervisor review and safe publication](supervisor-review.md). Commands and branch state below describe the earlier integration.
+
 # Final integration review and manual publication
 
 The team leader authorized local source integration and manages source-sharing/publication permissions. No declaration workflow is restarted here. The complete application is on local branch `feature/complete-v1-handover`, preserving the original starter commit. No automatic staging, commit or push was performed.
