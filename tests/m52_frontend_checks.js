@@ -31,7 +31,7 @@ global.STAIRUpload=U;
     assert(result.reconstruction,JSON.stringify(result.diagnostics));const c=result.reconstruction.canonical_output;
     assert.equal(c.profile_id,'ocr-layout-m52-v1');assert.equal(c.method_id,'P1-layout-m52-v1');
     assert.equal(calls[1].body.profile,'ocr-layout-m52-v1');assert(calls.some(x=>x.path==='/api/layout/assess'));
-    assert(result.policy?.every(d=>d.decision==='ABSTAIN'));assert.equal(result.stages.calendar,'BLOCKED_READ_ONLY');
+    assert.equal(result.policyProfile,'m5-source-review-v1');assert(result.policy?.some(d=>d.decision==='REVIEW'));assert(result.policy?.every(d=>['REVIEW','ABSTAIN'].includes(d.decision) && d.registered_routing_eligible===false && d.calibrated_probability===null && d.source_routing.route===d.decision && d.source_routing.revision_id===d.revision_id));assert.equal(result.stages.calendar,'BLOCKED_READ_ONLY');
     const views=U.displayedEvents(result);assert(views.length>0);assert(views.every(v=>v.source==='OCR image upload'));
     assert(c.packet.events.some(e=>e.revision.content.course_code));
     const detail={status:'passed',scope:'REAL_SYNTHETIC_OCR_ONLY',source_label:views[0].source,profile:c.profile_id,

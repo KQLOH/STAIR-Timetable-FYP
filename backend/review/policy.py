@@ -24,15 +24,19 @@ MESSAGES={
  'OMITTED_RECONSTRUCTION':'This is an unresolved skeleton, not a selected prediction.',
  'B3_DIAGNOSTIC_ONLY':'B3 output is retained for diagnostics, not substituted for P1.',
  'APPLICATION_REVIEW_ONLY':'A bounded application review is possible; this is not registered research routing.',
+ 'REGISTERED_ACCEPT':'The frozen policy supports this current event; calendar approval is separate.',
+ 'REGISTERED_REVIEW':'Check the source: the frozen policy requires review.',
+ 'REGISTERED_ABSTAIN':'Evidence, validation or frozen ranking does not support safe routing.',
  'INVALID_CORRECTION':'The correction proposal is invalid and was not applied.',
 }
 
 
 def explain(codes):
-    return tuple({'code':code,'message':MESSAGES[code]} for code in codes)
+    from backend.review.source_routing import MESSAGES as SOURCE_MESSAGES
+    return tuple({'code':code,'message':MESSAGES[code] if code in MESSAGES else SOURCE_MESSAGES[code][0]} for code in codes)
 
 
-def assess_event(run,event,findings=(),*,policy=None,clock=utc_now,revalidation_required=False,invalid_correction=False,validation_dependency_digest=None):
+def assess_event(run,event,findings=(),*,policy=None,clock=utc_now,revalidation_required=False,invalid_correction=False,validation_dependency_digest=None,source_evidence=None,source_graph=None,source_findings=None,registry=None):
     policy=policy or development_policy()
     reasons={'UNKNOWN_COMPLETENESS','PROVISIONAL_SCORING','UNAPPROVED_POLICY','ACCEPT_DISABLED'}
     hard_block=False
@@ -72,7 +76,7 @@ def assess_event(run,event,findings=(),*,policy=None,clock=utc_now,revalidation_
     if invalid_correction: reasons.add('INVALID_CORRECTION'); hard_block=True
     decision='ABSTAIN' if hard_block or not policy.allow_bounded_application_review else 'REVIEW'
     if decision=='REVIEW': reasons.add('APPLICATION_REVIEW_ONLY')
-    return PolicyAssessment(candidate_id=event.candidate_id if event else None,event_id=event.identity.event_id if event else None,
+    record = PolicyAssessment(candidate_id=event.candidate_id if event else None,event_id=event.identity.event_id if event else None,
         revision_id=event.revision.revision_id if event else None,revision_digest=digest(event.revision.model_dump(mode='json')) if event else None,
         reconstruction_profile=run.profile,decoder_mode=run.decoder_mode,policy_profile=policy.profile_id,policy_version=policy.version,
         policy_digest=digest(policy.model_dump(mode='json')),input_digest=run.input_digest,reconstruction_digest=run.reconstruction_digest,
@@ -83,12 +87,22 @@ def assess_event(run,event,findings=(),*,policy=None,clock=utc_now,revalidation_
         fields=tuple(fields),search_status=component or run.search_status,score_provenance='NO_SCORABLE_OUTPUT' if event is None else (
             'M4_SCORE_NOT_REUSED_AFTER_CORRECTION' if event.revision.version>1 else 'M4_PROVISIONAL_SUPPORT_ONLY'),
         base_score_digest=run.base_score_digest,review_required=True,recorded_at=clock())
+    from backend.review.source_routing import assess_source, apply_source_policy, PROFILE
+    routing = assess_source(run,event,relevant,source_evidence=source_evidence,pending=revalidation_required or invalid_correction,source_graph=source_graph,source_findings=source_findings)
+    record = record.model_copy(update={'source_routing':routing})
+    if run.profile == 'tarumt-structured-review-v1' and event is not None:
+        record = record.model_copy(update={'score_provenance':'STRUCTURED_SOURCE_NO_PROBABILITY'})
+    record=apply_source_policy(record) if getattr(run,'policy_profile',None)==PROFILE else record
+    return registry.route(run,event,relevant,record,source_evidence=source_evidence) if registry is not None else record
 
 
-def assess_run(run,clock=utc_now):
+
+def assess_run(run,clock=utc_now,*,registry=None):
     from backend.review.validation import validation_view
     graph=run.graph()
     if graph is None or not run.events():
-        return (assess_event(run,None,clock=clock),)
+        return (assess_event(run,None,clock=clock,registry=registry),)
     _,findings=validation_view(run,run.events(),graph.evidence,graph.context)
-    return tuple(assess_event(run,e,findings,clock=clock) for e in run.events())
+    from backend.review.source_routing import source_conflicts
+    conflicts=source_conflicts(graph)
+    return tuple(assess_event(run,e,findings,clock=clock,source_graph=graph,source_findings=conflicts,registry=registry) for e in run.events())

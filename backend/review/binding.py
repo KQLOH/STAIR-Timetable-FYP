@@ -3,7 +3,7 @@
 Checksums prove consistency, not who executed an algorithm. External API input
 is explicitly caller-supplied; trusted-host ingestion establishes the service boundary.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import re
 from typing import Any, Literal
@@ -23,7 +23,7 @@ class AssessmentInput(ContractModel):
     decoder_mode: Literal['constrained','unconstrained'] = 'constrained'
     reconstruction_context: Context = Field(default_factory=Context)
     reconstruction_settings: Settings = Field(default_factory=development_settings)
-    policy_profile: Literal['m5-development-v1','registered'] = 'm5-development-v1'
+    policy_profile: Literal['m5-development-v1','m5-source-review-v1','registered'] = 'm5-development-v1'
     # Separate application evidence only; original M4 and registered algorithms unchanged.
     layout_evidence: dict[str,Any] | None = None
 
@@ -62,6 +62,7 @@ class BoundRun:
     unresolved_ids: tuple[str,...]
     component_statuses: tuple[tuple[str,str],...]
     original_findings_json: str
+    policy_profile: str = 'm5-development-v1'
 
     def graph(self):
         return Graph.model_validate_json(self.graph_json) if self.graph_json else None
@@ -71,6 +72,15 @@ class BoundRun:
 
 
 def bind_input(request):
+    run = _bind_input(request)
+    if request.policy_profile == 'm5-source-review-v1':
+        from backend.review.source_routing import CONFIG_DIGEST
+        return replace(run, policy_profile=request.policy_profile,
+            input_digest=digest({'bound_input':run.input_digest,'source_review_rules':CONFIG_DIGEST}))
+    return run
+
+
+def _bind_input(request):
     # Detach caller-owned mutable dictionaries before any stateful ingestion.
     request=AssessmentInput.model_validate_json(request.model_dump_json())
     if len(request.source_packet.evidence)>512 or sum(len(s.raw_text) for s in request.source_packet.evidence)>500000:
@@ -82,7 +92,8 @@ def bind_input(request):
     if request.layout_evidence is not None:
         raise ReviewError('UNEXPECTED_REVIEW_LAYOUT_EVIDENCE',422)
     if request.source_packet.source.route=='tarumt_html':
-        raise ReviewError('STRUCTURED_REVIEW_BINDING_NOT_APPROVED',409)
+        from backend.review.structured import bind_structured
+        return bind_structured(request)
     if request.reconstruction_settings.profile_id!='m4-development-v1' or request.reconstruction_settings.algorithm!='finite-assignment-search-m4-v1':
         raise ReviewError('UNSUPPORTED_RECONSTRUCTION_PROFILE',422)
     if request.policy_profile=='registered':

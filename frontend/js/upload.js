@@ -3,7 +3,7 @@
     "use strict";
     const MAX_BYTES = 20 * 1024 * 1024;
     const PIPELINES = Object.freeze(["evidence", "B1", "B2", "B2H-v1"]);
-    const TYPES = {png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", pdf: "application/pdf"};
+    const TYPES = {png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", pdf: "application/pdf", txt: "text/plain"};
     const HASH = /^[a-f0-9]{64}$/;
     // Preserve the backend's JSON number representation inside its digested envelope.
     // JS stringify would turn e.g. 30.0 into 30, changing Python canonical hashes.
@@ -40,12 +40,32 @@
         if(message.includes('INVALID_PDF'))return 'This PDF could not be opened. Try another copy or export it as an image.';
         return 'We couldn’t read this file. Try another copy or a clearer image with the full timetable and headers visible.';
     }
+    const MAX_TEXT_BYTES = 128 * 1024, MAX_TEXT_LINES = 2048;
+    function validateCopiedText(text) {
+        requireValue(typeof text === 'string' && text.trim(), 'Paste some timetable text first.');
+        requireValue(new TextEncoder().encode(text).length <= MAX_TEXT_BYTES, 'Use at most 128 KiB of timetable text at a time.');
+        requireValue(text.split(/\r\n|\r|\n/).length <= MAX_TEXT_LINES, 'Use at most 2048 lines of timetable text at a time.');
+        requireValue(!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text), 'Remove unsupported control characters from the timetable text.');
+        return text;
+    }
+    function copiedTextFile(text) {
+        validateCopiedText(text);
+        return new File([text], 'copied-timetable.txt', {type:'text/plain'});
+    }
     async function validateFile(file) {
         const extension = String(file?.name || "").split(".").pop().toLowerCase();
         const mime = TYPES[extension];
-        requireValue(mime, "Unsupported file: choose PNG, JPG/JPEG or PDF.");
+        requireValue(mime, "Unsupported file: choose PNG, JPG/JPEG, PDF or plain text.");
         requireValue(file.size > 0 && file.size <= MAX_BYTES, "File must be nonempty and at most 20 MiB.");
         requireValue(!file.type || file.type === mime, "File extension and MIME type disagree.");
+        if (mime === 'text/plain') {
+            requireValue(file.size <= MAX_TEXT_BYTES, 'Use at most 128 KiB of timetable text at a time.');
+            let text;
+            try { text = new TextDecoder('utf-8', {fatal:true,ignoreBOM:true}).decode(await file.arrayBuffer()); }
+            catch { throw Error('Use UTF-8 encoded timetable text.'); }
+            validateCopiedText(text);
+            return {mime, filename:'copied-timetable.txt', text};
+        }
         const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer());
         const signature = extension === "png" ? [137,80,78,71,13,10,26,10] : extension === "pdf" ? [37,80,68,70,45] : [255,216,255];
         requireValue(signature.every((value, index) => bytes[index] === value), "File signature does not match its extension.");
@@ -103,14 +123,42 @@
         validatePacket({...output.packet, events: [...output.packet.events, ...output.unresolved_candidates]});
         return output;
     }
+    function calendarBundle(packet,reconstructionStatus='NOT_PROVIDED',decisions=[]) {
+        // Public policy records intentionally omit full findings. Carry only
+        // explicitly non-authoritative, revision-bound routing diagnostics.
+        const routing=[],registered=[];
+        for(const event of packet.events)for(const d of decisions || []){
+            if(registeredDecision(event,d)){registered.push(Object.fromEntries(['decision_id','candidate_id','event_id','revision_id','revision_digest','registration_id','registration_signature'].map(k=>[k,d[k]])));continue;}
+            if(d?.candidate_id!==event.candidate_id || d.revision_id!==event.revision.revision_id || d.event_id!==event.identity.event_id || !HASH.test(d.revision_digest || '') || !['REVIEW','ABSTAIN'].includes(d.decision) || d.registered_routing_eligible!==false || !['m5-development-v1','m5-source-review-v1'].includes(d.policy_profile))continue;
+            routing.push({candidate_id:d.candidate_id,event_id:d.event_id,revision_id:d.revision_id,revision_digest:d.revision_digest,route:d.decision,policy_profile:d.policy_profile,registered_accept_eligible:false});
+        }
+        return {packet,reconstruction_status:reconstructionStatus,context:{},assessments:[],...(routing.length?{routing_diagnostics:routing}:{}),...(registered.length?{registered_assessment_refs:registered}:{})};
+    }
+    function calendarBundleFromResult(result) {
+        const output=result.reconstruction?.canonical_output;
+        const packet=output?{...output.packet,events:[...output.packet.events,...output.unresolved_candidates]}:result.extraction;
+        return calendarBundle(packet,(output?.profile_id==='tarumt-structured-review-v1'?'NOT_PROVIDED':output?.status) || (result.stages?.reconstruction==='EXECUTION_ABORTED'?'EXECUTION_ABORTED':'NOT_PROVIDED'),result.policy);
+    }
+    function registeredDecision(event,decision){
+        return decision?.policy_profile==='m5-registered-v1' && ['AUTHENTIC','TEST_ONLY'].includes(decision.registration_mode) &&
+            ['registration_id','registration_signature','registration_source_digest','registration_evidence_digest','revision_digest'].every(k=>HASH.test(decision[k] || '')) &&
+            ['ACCEPT','REVIEW','ABSTAIN'].includes(decision.decision) && decision.registered_routing_eligible===(decision.decision==='ACCEPT') &&
+            decision.candidate_id===event?.candidate_id && decision.event_id===event?.identity?.event_id && decision.revision_id===event?.revision?.revision_id;
+    }
     function validatePolicy(payload, events) {
-        requireValue(payload?.profile === "m5-development-v1" && payload.registered_routing_ready === false &&
+        if(payload?.profile==='m5-registered-v1'){
+            requireValue(payload.registered_routing_ready===true && Array.isArray(payload.decisions) && payload.decisions.length>0 &&
+                payload.decisions.every(d=>registeredDecision(events.find(e=>e.candidate_id===d.candidate_id),d) && d.calibrated_probability==null),'Invalid registered policy receipt.');
+            return payload.decisions;
+        }
+        requireValue(["m5-development-v1","m5-source-review-v1"].includes(payload?.profile) && payload.registered_routing_ready === false &&
             Array.isArray(payload.decisions) && payload.decisions.length > 0, "Invalid M5 development assessment response.");
         for (const decision of payload.decisions) {
             requireValue(["REVIEW", "ABSTAIN"].includes(decision.decision) && decision.registered_routing_eligible === false &&
                 decision.calibrated_probability == null && Array.isArray(decision.reason_codes), "Unexpected policy promotion: development ACCEPT is disabled.");
             if (decision.candidate_id != null) requireValue(events.some(e => e.candidate_id === decision.candidate_id &&
                 e.revision.revision_id === decision.revision_id), "Policy refers to an unknown or stale candidate.");
+            if(payload.profile==='m5-source-review-v1')requireValue(decision.source_routing?.profile==='m5-source-review-v1' && decision.source_routing.route===decision.decision && decision.source_routing.revision_id===decision.revision_id && decision.source_routing.revision_digest===decision.revision_digest && decision.source_routing.registered_accept_eligible===false && decision.source_routing.calibrated_probability==null,'Invalid or stale source-review assessment.');
         }
         return payload.decisions;
     }
@@ -174,7 +222,12 @@
                 requireValue(!ruledGrid || pipeline === "evidence", "S2a requires the evidence pipeline; B1/B2/B2H inputs remain unchanged.");
                 requireValue(!(ruledGrid && blockGrid), "Choose one opt-in layout profile: S2a or S2b.");
                 requireValue(!blockGrid || pipeline === "evidence", "S2b requires the evidence pipeline; B1/B2/B2H inputs remain unchanged.");
-                const {mime, filename} = await validateFile(file);
+                const {mime, filename, text} = await validateFile(file);
+                if (mime === 'text/plain') {
+                    requireValue(pipeline === 'evidence', 'Copied text uses the application reader, not an OCR baseline.');
+                    layout = ruledGrid = blockGrid = contextCorrection = automatic = false;
+                    result.sourceText = text;
+                }
                 if (sequence !== this.sequence) return result;
                 this.objectUrl = global.URL.createObjectURL(file); result.previewUrl = this.objectUrl; result.mime = mime;
                 emit(`Extracting ${pipeline} evidence…`);
@@ -219,9 +272,10 @@
                 if (result.reconstruction) {
                     try {
                         const response = await this.request(blockGrid ? "/api/layout/s2b/assess" : ruledGrid ? "/api/layout/s2a/assess" : result.reconstructionProfile === "ocr-layout-m52-v1" ? "/api/layout/assess" : "/api/policy/assess", {method:"POST", headers:{"Content-Type":"application/json"},
-                            body:blockGrid ? JSON.stringify({source_packet:result.extraction,layout_evidence:result.layoutEvidence,reconstruction:{canonical_digest:result.reconstruction.canonical_digest}}) : assessmentBody(result.extraction, result.reconstruction, result.layoutEvidence)}, signal);
+                            body:blockGrid ? JSON.stringify({source_packet:result.extraction,layout_evidence:result.layoutEvidence,reconstruction:{canonical_digest:result.reconstruction.canonical_digest},policy_profile:'m5-source-review-v1'}) : assessmentBody(result.extraction, result.reconstruction, result.layoutEvidence,'m5-source-review-v1')}, signal);
                         if (sequence !== this.sequence) return result;
                         const output = result.reconstruction.canonical_output;
+                        result.policyProfile=response.profile;result.routingReport=response.routing_report;
                         result.policy = validatePolicy(response, output ? [...output.packet.events, ...output.unresolved_candidates] : []);
                         result.stages.policy = "DEVELOPMENT_ASSESSED";
                     } catch (error) {
@@ -230,9 +284,7 @@
                     }
                 } else result.stages.policy = "NOT_ASSESSED";
                 const output = result.reconstruction?.canonical_output;
-                const bundle = {packet:output?.packet || result.extraction,
-                    reconstruction_status:output?.status || (result.stages.reconstruction === "EXECUTION_ABORTED" ? "EXECUTION_ABORTED" : "NOT_PROVIDED"), context:{}, assessments:[]};
-                // Public M5 decisions omit complete findings; never manufacture a full M6 assessment from them.
+                const bundle=calendarBundleFromResult(result);
                 try {
                     if(bundle.packet.evidence.length>4096)throw new Error('Calendar diagnostic evidence limit (4096 spans) exceeded; calendar remains blocked.');
                     const eligibility = await this.request("/api/calendar/v1/eligibility", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(bundle)}, signal);
@@ -278,6 +330,23 @@
             venue:content.location || "Unresolved venue", type:content.session_type || "Unresolved type", source:layer,
             lecturer:content.lecturer || "", section:content.section || "", status:"review", completeCandidate:complete, selected:false, canonical:event};
     }
+    function boundRouting(event, decision){
+        if(registeredDecision(event,decision))return {route:decision.decision,support:'REGISTERED',registrationMode:decision.registration_mode,
+            explanations:decision.explanations || [{code:'REGISTERED_'+decision.decision,message:'Frozen policy assessed this current class.',action:'Calendar approval and independent verification remain separate.'}]};
+        const routing=decision?.source_routing;
+        return routing && ['REVIEW','ABSTAIN'].includes(routing.route) && routing.profile==='m5-source-review-v1' && routing.registered_accept_eligible===false && routing.calibrated_probability==null && decision.candidate_id===event.candidate_id && decision.revision_id===event.revision.revision_id && routing.revision_id===event.revision.revision_id && routing.revision_digest===decision.revision_digest ? routing : null;
+    }
+    function routingSummary(events,result){
+        const views=uniqueEvents(events),counts={ACCEPT:0,REVIEW:0,ABSTAIN:0,NOT_ASSESSED:0,REGISTERED:0,TEST_ONLY:0};
+        for(const view of views){const d=view.reviewTask?.decision || result?.policy?.find(d=>d.candidate_id===view.canonical?.candidate_id);const route=boundRouting(view.canonical,d);counts[route?.route || 'NOT_ASSESSED']++;if(route?.support==='REGISTERED')counts.REGISTERED++;if(route?.registrationMode==='TEST_ONLY')counts.TEST_ONLY++;}
+        return {total:views.length,review:counts.REVIEW,abstain:counts.ABSTAIN,unassessed:counts.NOT_ASSESSED,accept:counts.ACCEPT,registered:counts.REGISTERED,testOnly:counts.TEST_ONLY,automaticCoverage:views.length?counts.ACCEPT/views.length:null,accuracy:null,unsafeAcceptance:null};
+    }
+    function renderRoutingSummary(events,result){
+        const target=global.document.getElementById('sourceRoutingSummary');if(!target)return;
+        const m=routingSummary(events,result),fraction=n=>m.total?`${n} / ${m.total} (${Math.round(100*n/m.total)}%)`:'No candidates';
+        if(m.registered){target.textContent=`${m.testOnly?'TEST ONLY · ':''}Policy routing: ACCEPT ${fraction(m.accept)} · REVIEW ${fraction(m.review)} · ABSTAIN ${fraction(m.abstain)} · Not assessed ${m.unassessed}. Calendar approval and independent verification remain separate. These counts are not measured accuracy.`;return;}
+        target.textContent=`Source-review routing: REVIEW ${fraction(m.review)} · ABSTAIN ${fraction(m.abstain)} · Not assessed ${m.unassessed}. Automatic coverage: ${m.total?'0%':'not defined (no candidates)'}. Registered ACCEPT is unavailable. These counts are not accuracy or selective-safety results; accuracy and unsafe acceptance have not been measured.`;
+    }
     function eventIdentity(event) {
         return event?.candidate_id && event?.identity?.event_id ? JSON.stringify([event.candidate_id,event.identity.event_id]) : null;
     }
@@ -289,6 +358,8 @@
         return v?.status==='INDEPENDENTLY_VERIFIED' && v.revision_id===event?.revision?.revision_id && !!v.actor_id && !!v.recorded_at && !!v.evidence_record_id;
     }
     function needsStudentReview(view) {
+        if(view.routing?.route==='ABSTAIN')return true;
+        if(view.routing?.route==='REVIEW' && !humanCorrected(view.canonical) && view.canonical?.human_review?.status!=='APPROVED')return true;
         if(!view.completeCandidate)return true;
         const task=view.reviewTask,event=view.canonical;
         if(['REVALIDATION_REQUIRED','SUBMITTED_CORRECTION','ESCALATED'].includes(task?.state))return true;
@@ -307,25 +378,29 @@
             const key=eventIdentity(view.canonical),event=latest.get(key);
             if(!event)return view;
             requireValue(event.revision.source_document_id===view.canonical.revision.source_document_id,'Saved event source differs.');
-            return {...eventView(event,view.source),methodLabel:event.revision.method_id,reviewTask:tasks.get(key),savedReview:true};
+            return {...eventView(event,view.source),methodLabel:event.revision.method_id,reviewTask:tasks.get(key),routing:boundRouting(event,tasks.get(key)?.decision),savedReview:true};
         });
     }
-    function assessmentBody(packet, reconstruction, layoutEvidence) {
+    function assessmentBody(packet, reconstruction, layoutEvidence, policyProfile='m5-development-v1') {
         const raw = responseJSON.get(reconstruction);
         requireValue(raw, "Original reconstruction JSON unavailable; do not re-encode a digested envelope.");
         return '{"source_packet":' + JSON.stringify(packet) + ',"reconstruction":' + raw +
-            ',"decoder_mode":"constrained","reconstruction_context":{},"policy_profile":"m5-development-v1"' +
+            ',"decoder_mode":"constrained","reconstruction_context":{},"policy_profile":'+JSON.stringify(policyProfile) +
             (layoutEvidence ? ',"layout_evidence":' + JSON.stringify(layoutEvidence) : '') + '}';
     }
     function reviewIngestBody(result) {
         requireValue(result?.extraction && result?.reconstruction, 'Review admission requires an original source packet and reconstruction.');
-        return assessmentBody(result.extraction,result.reconstruction,result.layoutEvidence);
+        if(result.pipeline==='tarumt-structured-review-v1') {
+            requireValue(typeof result.reconstruction_json==='string' && JSON.stringify(JSON.parse(result.reconstruction_json))===JSON.stringify(result.reconstruction),'Original structured assessment JSON unavailable.');
+            return '{"source_packet":'+JSON.stringify(result.extraction)+',"reconstruction":'+result.reconstruction_json+',"policy_profile":"m5-source-review-v1"}';
+        }
+        return assessmentBody(result.extraction,result.reconstruction,result.layoutEvidence,result.policyProfile || 'm5-development-v1');
     }
     function displayedEvents(result) {
         const output = result?.reconstruction?.canonical_output;
         const label = sourceLabel(result?.extraction?.source);
         return uniqueEvents(output ? [...output.packet.events, ...output.unresolved_candidates].map(e => ({...eventView(e, label),
-            methodLabel:output.profile_id, partialProjection:output.unresolved_candidates.some(p=>p.candidate_id===e.candidate_id)})) :
+            methodLabel:output.profile_id,routing:boundRouting(e,result.policy?.find(d=>d.candidate_id===e.candidate_id)), partialProjection:output.unresolved_candidates.some(p=>p.candidate_id===e.candidate_id)})) :
             (result?.extraction?.events || []).map(e => ({...eventView(e,label),methodLabel:result.pipeline})));
     }
     function sourceLabel(source, {sample = false} = {}) {
@@ -335,6 +410,7 @@
         if (source.route === "native_pdf" && source.media_type === "application/pdf") return "Native PDF extraction";
         if (source.route === "ocr" && source.media_type === "application/pdf") return "PDF OCR extraction";
         if (source.route === "ocr" && ["image/png","image/jpeg"].includes(source.media_type)) return "OCR image upload";
+        if (source.route === "text" && source.media_type === "text/plain") return "Copied timetable text";
         return "Unknown source";
     }
     function node(tag, text, className) {
@@ -423,7 +499,13 @@
         }
         container.replaceChildren();container.dataset.previewUrl=result.previewUrl || "";
         if (!result.previewUrl) { container.append(node("p", "No validated source preview available."));return; }
-        if (result.mime === "application/pdf") {
+        if (result.mime === 'text/plain') {
+            const text=node('pre',result.sourceText || '', 'copied-source-text');
+            text.tabIndex=0;text.setAttribute('aria-label','Original copied timetable text');
+            const download=node('a','Save original text for editing access','button secondary');
+            download.href=result.previewUrl;download.download='copied-timetable.txt';
+            container.append(text,download,node('p','Keep this exact text file to reconnect saved reviews. To enable editing, personally authorize the saved original in the local review app. Copied text does not retain the original page layout.'));
+        } else if (result.mime === "application/pdf") {
             const frame=node("iframe");frame.src=result.previewUrl;frame.title="Local uploaded PDF";frame.setAttribute("sandbox", "");
             const link=node("a", "Open local PDF if embedded preview is unsupported");link.href=result.previewUrl;link.target="_blank";link.rel="noopener noreferrer";
             container.append(frame,link,node("p","PDF coordinates are listed with evidence; PDF overlay is not supported."));
@@ -606,6 +688,12 @@
                 facts.append(node('p','Red class block — check for a clash or public holiday.','uncertain-field'));
             const corrections=eventRegions(event,result).flatMap(({region})=>regionDetails.find(d=>d.region_id===region.region_id)?.ocr_corrections || []);
             if(!humanCorrected(event) && corrections.some(c=>c.status==='AMBIGUOUS'))facts.append(node('p','Possible OCR error — please check','uncertain-field'));
+            const routing=boundRouting(event,view.reviewTask?.decision || result.policy?.find(d=>d.candidate_id===event.candidate_id));
+            if(routing){
+                facts.append(node('p',routing.route==='ACCEPT'?`${routing.registrationMode==='TEST_ONLY'?'TEST ONLY · ':''}ACCEPT · Registered policy; calendar approval is separate`:routing.route==='ABSTAIN'?'ABSTAIN · Not safe to use as a complete class':'REVIEW · Check this class against the original','source-routing '+routing.route.toLowerCase()));
+                if(routing.support==='SOURCE_SUPPORTED')facts.append(node('p','Source-supported reading; this is not registered ACCEPT or independent verification.'));
+                for(const reason of routing.explanations.filter(r=>r.code!=='REGISTERED_ACCEPT_UNAVAILABLE').slice(0,3))facts.append(node('p',reason.message+' '+reason.action));
+            }else facts.append(node('p','Routing has not been assessed for this exact revision. Refresh or check the saved class.','uncertain-field'));
             body.append(facts);
             const footer=node('div',null,'class-footer');footer.append(node('span',humanCorrected(event)?'Human corrected':'Automatically extracted','class-status'),status,node('span',independentlyVerified(event)?'Independently verified':'Not yet verified independently','verification-note'));
             const inspect=node('button','View source','text-button');inspect.type='button';inspect.addEventListener('click',()=>inspectEvent(event,result,inspect));footer.append(inspect);const edit=node('button','Edit class','text-button');edit.type='button';edit.addEventListener('click',()=>global.document.dispatchEvent(new global.CustomEvent('stair-edit-class',{detail:{candidateId:event.candidate_id}})));footer.append(edit);body.append(footer);
@@ -641,5 +729,5 @@
     }
 
     global.STAIRUpload = Object.freeze({MAX_BYTES,PIPELINES,Controller,validateFile,validatePacket,validateExtraction,validateReconstruction,
-        eventIdentity,humanCorrected,independentlyVerified,needsStudentReview,mergeSavedViews,readerConfiguration,validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,uniqueEvents,filteredEvents,verified,eventRegions,friendlyDate,friendlyTime,inspectEvent,expandSource,diagnostic,friendlyFailure,reviewIngestBody,highlightEvidence});
+        calendarBundle,calendarBundleFromResult,boundRouting,routingSummary,renderRoutingSummary,copiedTextFile,validateCopiedText,eventIdentity,humanCorrected,independentlyVerified,needsStudentReview,mergeSavedViews,readerConfiguration,validatePolicy,eventView,sourceLabel,originalEvidenceId,displayedEvents,renderEvidence,renderStructuredEvidence,renderSource,drawBoxes,renderCards,uniqueEvents,filteredEvents,verified,eventRegions,friendlyDate,friendlyTime,inspectEvent,expandSource,diagnostic,friendlyFailure,reviewIngestBody,highlightEvidence});
 })(globalThis);

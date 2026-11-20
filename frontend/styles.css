@@ -2328,3 +2328,29 @@ summary { cursor:pointer; border-radius:4px; }
 
 /* Student editing reuses protected review APIs; technical controls stay available. */
 .student-editor{display:grid;gap:16px;padding-bottom:24px}.student-editor label{display:grid;gap:6px;font-size:14px}.student-editor input,.student-editor select,.student-editor textarea{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px}.student-editor .student-confirm{display:flex;align-items:flex-start;gap:10px}.student-confirm input{width:auto;margin-top:4px}#studentCrop canvas{max-width:100%;height:auto;border-radius:8px}#studentFeedback{overflow-wrap:anywhere;line-height:1.6}#advancedClassReview{border-top:1px solid var(--line);padding-top:16px}#advancedClassReview summary{cursor:pointer}#advancedClassReview:not([open])>*:not(summary){display:none}.calendar-event.has-conflict{border:2px solid #ac3838}.calendar-event .calendar-warning{color:#8a2323;font-weight:600}@media(max-width:650px){.review-drawer{width:100%;max-width:100%}.class-footer{gap:10px;flex-wrap:wrap}}
+
+.copied-text-input{margin-top:24px;display:grid;gap:12px}.copied-text-input textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;resize:vertical;font:inherit}.copied-text-input button{justify-self:start}.copied-source-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto;padding:16px;text-align:left}
+
+.sandbox-page{max-width:1020px;margin:0 auto;padding:32px 20px}.sandbox-page header,.sandbox-page footer{margin-bottom:24px}.sandbox-page h1{font-size:36px;line-height:1.2}.sandbox-page h2{font-size:25px}.sandbox-page h3{margin-top:24px}.sandbox-page p{line-height:1.6;overflow-wrap:anywhere}.sandbox-page .sandbox-workflow{padding:24px;display:grid;gap:14px}.sandbox-page select{display:block;max-width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:white}.sandbox-sample-card,.sandbox-operation{padding:14px;border:1px solid var(--line);border-radius:10px;margin:12px 0;background:white}.sandbox-operation>h4,.sandbox-sample-card>h4{margin:0 0 8px}.sandbox-confirmation{display:flex;align-items:flex-start;gap:10px;line-height:1.6}.sandbox-confirmation input{margin-top:5px}.sandbox-page pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:400px;overflow:auto}.sandbox-page details{max-width:100%;overflow-wrap:anywhere}.sandbox-blocked{border-left:4px solid #ad5b16}.sandbox-page button{white-space:normal}@media(max-width:650px){.sandbox-page{padding:20px 12px}.sandbox-page .sandbox-workflow{padding:16px}.sandbox-page .review-workflow-actions{flex-direction:column;align-items:stretch}.sandbox-page h1{font-size:29px}}
+
+.source-routing{font-weight:700}.source-routing.abstain{color:#8a3d15}.source-routing.review{color:#12695f}
+
+/* Whole-source review remains readable on laptop and mobile. */
+.schedule-check-section { padding:20px; margin:20px 0; }
+#scheduleCheckBody fieldset { margin:14px 0; padding:12px; border:1px solid #cbd5e1; border-radius:8px; min-width:0; }
+#scheduleCheckBody input:not([type=checkbox]), #scheduleCheckBody select, #scheduleCheckBody textarea { display:block; width:100%; margin:8px 0; padding:8px; box-sizing:border-box; }
+#scheduleCheckBody label { display:block; margin:12px 0; }
+.analysis-result pre,#scheduleCheckBody pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+
+.schedule-source-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; }
+#scheduleOriginal img { max-width:100%; height:auto; }
+#scheduleOriginal iframe { width:100%; min-height:600px; border:1px solid #cbd5e1; }
+@media(max-width:800px) { .schedule-source-grid { grid-template-columns:1fr; } }
+
+#independentBody pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+#independentBody > label { display:block; margin:12px 0; }
+#independentBody textarea { display:block; width:100%; min-height:90px; box-sizing:border-box; margin:12px 0; }
+#independentBody input[type=datetime-local] { display:block; margin:6px 0; }
+
+/* Observed workload is available without the optional verification workflow. */
+.workload-summary{display:flex;flex-wrap:wrap;gap:16px;margin:18px 0}.workload-summary>div{display:grid;gap:6px;min-width:150px;padding:18px;background:#f1f7f6;border-radius:10px}.workload-summary strong{font-size:30px;color:#0d514a}.workload-table{width:100%;border-collapse:collapse;margin:18px 0}.workload-table th,.workload-table td{text-align:left;padding:10px;border-bottom:1px solid var(--line)}#analysisResult p{line-height:1.6;overflow-wrap:anywhere}#analysisResult pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}#analysisResearch>summary{cursor:pointer;font-weight:600}#analysisOptions label{display:grid;gap:6px;margin:10px 0}#analysisResearch .schedule-check-section{padding:0;margin:16px 0;border:0}

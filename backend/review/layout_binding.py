@@ -7,7 +7,7 @@ from backend.review.models import ReviewError
 
 
 def bind_layout_review(request,profile):
-    if request.policy_profile!='m5-development-v1':
+    if request.policy_profile not in {'m5-development-v1','m5-source-review-v1'}:
         raise ReviewError('REGISTERED_POLICY_UNAVAILABLE',409)
     if request.reconstruction_context!=Context() or request.reconstruction_settings!=development_settings():
         raise ReviewError('REVIEW_LAYOUT_CONTEXT_UNSUPPORTED',422)

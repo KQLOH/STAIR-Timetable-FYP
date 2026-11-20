@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');require('../frontend/js/upload.js');
+const U=STAIRUpload,event={candidate_id:'synthetic-candidate',revision:{revision_id:'synthetic-revision',content:{course_code:'CS101'},observations:[]}};
+const routing={profile:'m5-source-review-v1',route:'REVIEW',support:'SOURCE_SUPPORTED',revision_id:'synthetic-revision',revision_digest:'a'.repeat(64),registered_accept_eligible:false,calibrated_probability:null,explanations:[]};
+const decision={candidate_id:event.candidate_id,revision_id:event.revision.revision_id,revision_digest:'a'.repeat(64),decision:'REVIEW',registered_routing_eligible:false,calibrated_probability:null,reason_codes:[],source_routing:routing};
+assert.equal(U.boundRouting(event,decision),routing);assert.equal(U.boundRouting(event,{...decision,revision_id:'old'}),null);assert.equal(U.boundRouting(event,{...decision,source_routing:{...routing,revision_digest:'b'.repeat(64)}}),null);assert.equal(U.boundRouting(event,{...decision,source_routing:{...routing,registered_accept_eligible:true}}),null);
+const view={id:'synthetic',canonical:event,completeCandidate:true,routing};const report=U.routingSummary([view],{policy:[decision]});assert.equal(report.review,1);assert.equal(report.accept,0);assert.equal(report.accuracy,null);assert.equal(report.unsafeAcceptance,null);assert(U.needsStudentReview(view));
+assert.equal(U.routingSummary([],{policy:[]}).automaticCoverage,null);assert.equal(U.routingSummary([view],{policy:[{...decision,revision_id:'old'}]}).unassessed,1);
+assert.throws(()=>U.validatePolicy({profile:'m5-source-review-v1',registered_routing_ready:false,decisions:[{...decision,decision:'ACCEPT'}]},[event]),/promotion/);
+assert.throws(()=>U.validatePolicy({profile:'m5-source-review-v1',registered_routing_ready:false,decisions:[{...decision,source_routing:{...routing,revision_id:'stale'}}]},[event]),/stale/);
+console.log('PASS current-revision source routing, truthful coverage and stale/ACCEPT rejection');

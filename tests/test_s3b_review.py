@@ -289,4 +289,4 @@ class S3bReviewTests(unittest.TestCase):
             packet=CanonicalTimetable.model_validate(response.json()['data']['canonical'])
             self.assertEqual(packet.source.route,'tarumt_html');self.assertTrue(all(e.identity.stable_key is None for e in packet.events))
             with self.assertRaises(ReviewError) as error:bind_input(AssessmentInput(source_packet=packet,reconstruction={}))
-            self.assertEqual(error.exception.code,'STRUCTURED_REVIEW_BINDING_NOT_APPROVED')
+            self.assertEqual(error.exception.code,'INVALID_STRUCTURED_REVIEW_BINDING')

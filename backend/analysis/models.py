@@ -38,7 +38,7 @@ class Availability(ContractModel):
 
 class AnalysisInput(ContractModel):
     event_set_id: str = Field(min_length=1, max_length=100)
-    profile: Literal['m7-development-v1', 'registered']
+    profile: Literal['m7-development-v1', 'm7-student-v1', 'registered']
     packet: CanonicalTimetable
     scope: Scope
     context: CalendarContext = Field(default_factory=CalendarContext)
@@ -50,7 +50,7 @@ class AnalysisInput(ContractModel):
 
     @model_validator(mode='after')
     def limits(self):
-        if len(self.packet.events)>100 or len(self.packet.evidence)>512 or sum(len(s.raw_text) for s in self.packet.evidence)>500000:
+        if len(self.packet.events)>100 or len(self.packet.evidence)>(4096 if self.profile=='m7-student-v1' else 512) or sum(len(s.raw_text) for s in self.packet.evidence)>500000:
             raise ValueError('Analysis input limits exceeded')
         return self
 
@@ -60,3 +60,18 @@ def binding(request):
     return digest({'event_set_id': request.event_set_id, 'packet': request.packet.model_dump(mode='json'),
                    'scope': request.scope.model_dump(mode='json'), 'context': request.context.model_dump(mode='json'),
                    'declared_kind':request.declared_kind})
+
+
+class ObservedInput(ContractModel):
+    """Printed slots only: no scope authority, recurrence expansion or approval."""
+    packet: CanonicalTimetable
+    start: date | None = None
+    end: date | None = None
+
+    @model_validator(mode='after')
+    def limits(self):
+        if self.start and self.end and self.end < self.start:
+            raise ValueError('End date must not precede start date')
+        if len(self.packet.events)>100 or len(self.packet.evidence)>4096 or sum(len(s.raw_text) for s in self.packet.evidence)>500000:
+            raise ValueError('Observed analysis input limits exceeded')
+        return self

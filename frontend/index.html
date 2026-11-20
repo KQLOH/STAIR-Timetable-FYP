@@ -225,24 +225,45 @@
       </section>
 
       <section class="view" id="view-analysis">
-        <div class="section-intro"><div><p class="eyebrow">M7 · DEVELOPMENT</p><h2>Schedule Analysis</h2>
-          <p>Observed canonical candidates only. Empty intervals do not establish availability.</p></div></div>
+        <div class="section-intro"><div><p class="eyebrow">Your workload</p><h2>Analyze My Schedule</h2>
+          <p>See your detected class hours, busy days and possible overlaps. No reviewer or sign-in is needed for this summary.</p></div></div>
         <div class="analysis-controls">
-          <label>Start date <input type="date" id="analysisStart" required></label>
-          <label>End date <input type="date" id="analysisEnd" required></label>
-          <label>Analysis IANA timezone <input id="analysisZone" placeholder="Explicit timezone" required></label>
-          <label>Declared timetable scope <input id="analysisScope" placeholder="Timetable identifier" required></label>
-          <label>Cohort (if evidenced) <input id="analysisCohort" placeholder="Optional cohort identifier"></label>
-          <button class="button primary" id="analyzeSchedule" type="button">Analyze observed events</button>
+          <button class="button primary" id="analyzeSchedule" type="button">Analyze my classes</button>
+          <details id="analysisOptions"><summary>Dates and local time (optional)</summary>
+            <p>Leave dates empty to count all detected class slots. Known dates and source timezone are filled when supported. Unknown weeks are never expanded.</p>
+            <label>From <input type="date" id="analysisStart"></label>
+            <label>Through <input type="date" id="analysisEnd"></label>
+            <label>Source timezone, if known <input id="analysisZone" placeholder="Leave blank if unknown"></label>
+          </details>
         </div>
-        <div id="analysisResult" class="analysis-result" aria-live="polite">NOT ASSESSED — select a canonical source and explicit scope.</div>
+        <div id="analysisResult" class="analysis-result" aria-live="polite">Upload a timetable or paste its text to see your observed workload.</div>
+        <details id="analysisResearch" class="card schedule-check-section">
+          <summary>Advanced / Research Verification (optional)</summary>
+          <p>This separate workflow checks schedule completeness for verified study windows. You do not need it to view the workload summary above. Existing checks and drafts remain saved.</p>
+          <details><summary>Advanced scope details</summary>
+            <label>Timetable identifier <input id="analysisScope" placeholder="Timetable identifier"></label>
+            <label>Class group (if shown) <input id="analysisCohort" placeholder="Leave blank if unknown"></label>
+          </details>
+        <section class="card schedule-check-section" aria-labelledby="wholeScheduleTitle">
+          <h3 id="wholeScheduleTitle">Whole-source research check</h3>
+          <p>Inspect every page of the original, including classes the reader may have missed. Your check is saved separately from independent verification. Editing a class invalidates an older check.</p>
+          <button type="button" class="button secondary" id="scheduleSource">View original</button>
+          <button type="button" class="button secondary" id="scheduleStart">Start whole-timetable check</button>
+          <button type="button" class="button secondary" id="scheduleRestore">Reopen saved check</button>
+          <p id="scheduleCheckStatus" aria-live="polite">Optional: reconnect editing access to inspect a saved source check. Observed workload above does not require this.</p>
+          <div class="schedule-source-grid"><div id="scheduleOriginal"></div><div id="scheduleCheckBody"></div></div>
+          <div class="analysis-controls"><label>Your availability starts <input type="datetime-local" id="studyStart"></label><label>Ends <input type="datetime-local" id="studyEnd"></label></div>
+          <button type="button" class="button secondary" id="scheduleAnalyze">Analyze checked schedule</button>
+          <div id="verifiedAnalysisResult" class="analysis-result" aria-live="polite"></div>
+        </section>
+        </details>
       </section>
 
       <section class="view" id="view-upload">
         <div class="section-intro">
           <p class="eyebrow">Step 1 of 3</p>
           <h2>Add your timetable</h2>
-          <p>Upload PNG, JPG or PDF to the local backend. OCR and reconstruction may remain incomplete.
+          <p>Upload PNG, JPG or PDF, or paste copied timetable text. Check the extracted classes against your original.
           </p>
         </div>
         <div class="upload-layout">
@@ -253,7 +274,7 @@
             <h3>Drop your timetable here</h3>
             <p>or choose a file from your computer</p>
             <button class="button primary" id="browseButton">Choose file</button>
-            <small>PDF, PNG, JPG/JPEG · max 20 MiB</small>
+            <small>PDF, PNG, JPG/JPEG · max 20 MiB; saved text · max 128 KiB</small>
           </section>
           <aside class="upload-tips">
             <h3>Read your timetable</h3>
@@ -306,6 +327,14 @@
             </button>
           </aside>
         </div>
+        <section class="panel copied-text-input" aria-labelledby="copiedTextTitle">
+          <h3 id="copiedTextTitle">Or paste your timetable</h3>
+          <p>Copy class details with their days, dates and times. Keep each class on its own line or separate classes with a blank line. Copied text loses the original page layout, so check the results carefully.</p>
+          <label for="copiedTimetableText">Timetable text</label>
+          <textarea id="copiedTimetableText" rows="6" maxlength="131072" placeholder="Paste timetable text here" aria-describedby="copiedTextFeedback"></textarea>
+          <button id="extractCopiedText" type="button" class="button primary">Read pasted timetable</button>
+          <p id="copiedTextFeedback" role="status" aria-live="polite">Your pasted text stays here while you review the extracted classes.</p>
+        </section>
       </section>
 
       <section class="view" id="view-review">
@@ -329,6 +358,7 @@
           <div><span>Independently verified</span><strong id="reviewVerified">0</strong></div>
         </div>
         <p class="review-notice">Check your classes against the original timetable. You can save corrections with editing access. Calendar sync is unavailable.</p>
+        <p id="sourceRoutingSummary" class="review-notice" role="status" aria-live="polite">Source-review routing is not assessed. Registered ACCEPT is unavailable.</p>
         <section class="review-notice" aria-label="Saved review connection">
           <p id="savedReviewStatus" role="status" aria-live="polite">Automatically extracted details are shown. Saved corrections are private; reconnect saved reviews to load them.</p>
           <button id="reconnectSavedReviews" class="button secondary" type="button">Reconnect saved reviews</button>
@@ -415,6 +445,7 @@
               <use href="#i-shield" />
             </svg>Preview only</span>
         </div>
+        <p class="review-notice">Try calendar changes with invented data in a separate local sandbox. Your timetable stays here. <a href="http://127.0.0.1:8022" target="_blank" rel="noopener noreferrer">Open local calendar sandbox</a>. Start it with the supported launcher described in the README.</p>
         <details class="calendar-limitations"><summary>Advanced Details: calendar test sandbox</summary>
         <section class="panel sandbox-workflow" aria-labelledby="sandboxWorkflowTitle" id="sandboxWorkflow">
           <p class="eyebrow">TEST_ONLY · local synthetic calendar</p>
@@ -515,7 +546,7 @@
   </div>
 
   <input id="fileInput" type="file" hidden
-    accept=".pdf,.png,.jpg,.jpeg">
+    accept=".pdf,.png,.jpg,.jpeg,.txt">
 
   <div class="loading-overlay" id="loadingOverlay" aria-live="polite" aria-hidden="true">
     <div class="loader-card">
@@ -721,6 +752,8 @@
   <script src="./js/upload.js" defer></script>
   <script src="./js/intranet.js" defer></script>
   <script src="./js/analysis.js" defer></script>
+  <script src="./js/temporal-scope.js" defer></script>
+  <script src="./js/schedule-check.js" defer></script>
   <script src="./js/controls.js" defer></script>
   <script src="./js/review.js" defer></script>
   <script src="./js/sandbox.js" defer></script>

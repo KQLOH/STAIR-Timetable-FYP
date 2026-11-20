@@ -13,9 +13,9 @@ UNRESOLVED={'PENDING','OUTCOME_UNKNOWN','RECONCILIATION_REQUIRED'}
 
 
 class LocalSandbox:
-    def __init__(self,directory,sandbox_id,access,*,test_only=False,clock=utc_now):
+    def __init__(self,directory,sandbox_id,access,*,test_only=False,clock=utc_now,registry=None):
         if not sandbox_id.startswith(('local:','test:')): raise CalendarError('LOCAL_SANDBOX_ID_REQUIRED',422)
-        self.sandbox_id=sandbox_id;self.access=access;self.clock=clock;self.fixtures=None
+        self.sandbox_id=sandbox_id;self.access=access;self.clock=clock;self.fixtures=None;self.registry=registry
         self.snapshot_scope='TEST_ONLY' if test_only else 'DEVELOPMENT_BLOCKED'
         self.journal=Journal(directory,test_only=test_only)
         with self.journal.locked():
@@ -42,7 +42,7 @@ class LocalSandbox:
         with self.journal.locked():
             state,_=self.journal.load()
             test=state['scope']=='TEST_ONLY' and self.fixtures is not None and self.fixtures.authorizes(bundle)
-            plan=build_preview(bundle,self._snapshot(state),test_authorized=test,clock=self.clock)
+            plan=build_preview(bundle,self._snapshot(state),test_authorized=test,clock=self.clock,registry=self.registry)
             family=digest({'family':bundle.packet.source.source_family_id,'timetable':bundle.packet.source.timetable_id,
                            'capture_fallback':bundle.packet.source.source_document_id if not bundle.packet.source.source_family_id else None})
             old_observation=state['observations'].get(family)
@@ -74,10 +74,21 @@ class LocalSandbox:
             plan=plan.model_copy(update={'source_bindings':tuple(ref.model_copy(update={'observation_version':epoch}) for ref in plan.source_bindings)})
             plan=plan.model_copy(update={'preview_digest':plan.checksum()})
             state['previews'][plan.preview_digest]=plan.model_dump(mode='json')
+            registered=[d for d in bundle.assessments if d.registration_mode]
+            if registered:
+                from backend.review.models import RegisteredAssessmentRef
+                state.setdefault('registered_previews',{})[plan.preview_digest]=[
+                    {k:d.model_dump(mode='json')[k] for k in RegisteredAssessmentRef.model_fields} for d in registered]
             self.journal.append(state,'PREVIEW',principal.actor_id,{'preview_digest':plan.preview_digest,'input_digest':plan.input_digest})
             return plan
 
     def _current_sources(self,state,plan):
+        for ref in state.get('registered_previews',{}).get(plan.preview_digest,()):
+            from backend.review.models import RegisteredAssessmentRef
+            try:
+                if self.registry is None:raise ValueError('No registration')
+                self.registry.resolve(RegisteredAssessmentRef.model_validate(ref))
+            except (ValueError,KeyError):raise CalendarError('REGISTERED_POLICY_STALE_REPREVIEW_REQUIRED',409) from None
         for ref in plan.source_bindings:
             source=state['sources'].get(ref.stable_key)
             if source and (source['observation_missing'] or source['lineage_conflict']):

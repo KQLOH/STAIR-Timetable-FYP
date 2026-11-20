@@ -41,8 +41,9 @@ class _Run:
 class ReviewStore:
     storage_kind = 'PROCESS_LOCAL_NOT_RESTART_PERSISTENT'
 
-    def __init__(self,authority,clock=utc_now):
+    def __init__(self,authority,clock=utc_now,*,registry=None):
         self.authority,self.clock=authority,clock
+        self.registry=registry
         self._tasks={}; self._runs={}; self._lock=RLock()
 
     def _task(self,task_id,principal,permission):
@@ -85,7 +86,7 @@ class ReviewStore:
             graph=snapshot.graph()
             run=_Run(snapshot,graph.evidence if graph else (),graph.context if graph else None,
                      {e.candidate_id:e for e in snapshot.events()})
-            decisions=assess_run(snapshot,clock=self.clock)
+            decisions=assess_run(snapshot,clock=self.clock,registry=self.registry)
             tasks=[]
             for decision in decisions:
                 event=run.events.get(decision.candidate_id)
@@ -101,9 +102,23 @@ class ReviewStore:
             self._runs[run_id]=run
             return tuple(tasks)
 
+    def _current_view(self,view):
+        # Historical signed decisions remain intact in the journal. A restarted
+        # or revoked host must not present their old ACCEPT as current authority.
+        if view.decision.registration_mode is None:return view
+        run=self._runs[view.run_id];event=view.current_event
+        packet=CanonicalTimetable(source=self._source(view.run_id),evidence=run.evidence,
+            events=tuple(run.events.values()))
+        if event and self.registry is not None and self.registry.verifies(view.decision,packet,event):return view
+        graph,findings=validation_view(run.snapshot,tuple(run.events.values()),run.evidence,run.context)
+        decision=assess_event(run.snapshot,event,findings,clock=self.clock,revalidation_required=True,
+            source_evidence=run.evidence,source_graph=graph)
+        return view.model_copy(update={'decision':decision,'current_event':self._with_decision(event,decision)})
+
     def get(self,task_id,principal):
         with self._lock:
-            return ReviewTask.model_validate_json(self._task(task_id,principal,'read').view.model_dump_json())
+            view=self._current_view(self._task(task_id,principal,'read').view)
+            return ReviewTask.model_validate_json(view.model_dump_json())
 
     def _source(self,run_id):
         return CanonicalTimetable.model_validate_json(self._runs[run_id].snapshot.source_json).source
@@ -115,7 +130,7 @@ class ReviewStore:
     def queue_summary(self,principal,offset=0,limit=50):
         self.authority.require(principal,'read')
         with self._lock:
-            views=[t.view for t in self._tasks.values() if self._visible(t.view,principal)]
+            views=[self._current_view(t.view) for t in self._tasks.values() if self._visible(t.view,principal)]
             views.sort(key=lambda t:(t.created_at,str(t.task_id)))
             return {'total':len(views),'states':{s.value:sum(t.state==s for t in views) for s in ReviewState},
                 'tasks':[v.model_dump(mode='json') for v in views[offset:offset+limit]],
@@ -174,7 +189,7 @@ class ReviewStore:
                     status='INVALID',previous_revision_id=event.revision.revision_id,new_revision_id=None,
                     before_json=event.model_dump_json(),proposal_json=submission.model_dump_json(),after_json=None,error_codes=(code,))
                 run.requests.add(str(submission.request_id)); task.corrections+=(record,)
-                decision=assess_event(run.snapshot,event,clock=self.clock,revalidation_required=True,invalid_correction=True)
+                decision=assess_event(run.snapshot,event,clock=self.clock,registry=self.registry,revalidation_required=True,invalid_correction=True)
                 task.decisions+=(decision.model_dump_json(),)
                 task.view=task.view.model_copy(update={'current_event':self._with_decision(event,decision),'decision':decision,'validation_dependency_digest':None})
                 run.events[event.candidate_id]=task.view.current_event
@@ -186,7 +201,7 @@ class ReviewStore:
                 status='SUBMITTED',previous_revision_id=event.revision.revision_id,new_revision_id=updated.revision.revision_id,
                 before_json=event.model_dump_json(),proposal_json=submission.model_dump_json(),after_json=updated.model_dump_json())
             task.corrections+=(record,); task.revisions+=(updated.model_dump_json(),)
-            decision=assess_event(run.snapshot,updated,clock=self.clock,revalidation_required=True)
+            decision=assess_event(run.snapshot,updated,clock=self.clock,registry=self.registry,revalidation_required=True)
             task.decisions+=(decision.model_dump_json(),)
             updated=self._with_decision(updated,decision)
             run.events[event.candidate_id]=updated
@@ -197,7 +212,7 @@ class ReviewStore:
             for other in self._tasks.values():
                 if other is not task and other.view.run_id==task.view.run_id and other.view.state!=ReviewState.CLOSED and other.view.current_event is not None:
                     current=other.view.current_event
-                    invalidated=assess_event(run.snapshot,current,clock=self.clock,revalidation_required=True)
+                    invalidated=assess_event(run.snapshot,current,clock=self.clock,registry=self.registry,revalidation_required=True)
                     other.decisions+=(invalidated.model_dump_json(),)
                     invalid_event=current.model_copy(update={'validation':ConstraintValidation(),
                         'policy':PolicyDecision(decision='ABSTAIN',revision_id=current.revision.revision_id,
@@ -214,12 +229,12 @@ class ReviewStore:
             if task.view.state not in {ReviewState.REVALIDATION_REQUIRED,ReviewState.IN_PROGRESS} or task.view.current_event is None:
                 raise ReviewError('INVALID_REVIEW_TRANSITION',409)
             run=self._runs[task.view.run_id]
-            _,findings=validation_view(run.snapshot,tuple(run.events.values()),run.evidence,run.context)
+            routing_graph,findings=validation_view(run.snapshot,tuple(run.events.values()),run.evidence,run.context)
             event=task.view.current_event; group=dict(run.snapshot.candidate_groups)[event.candidate_id]
             validation=assessment_for(event,group,findings)
             assessed=event.model_copy(update={'validation':validation})
             dependency=self._dependency(run)
-            decision=assess_event(run.snapshot,assessed,findings,clock=self.clock,validation_dependency_digest=dependency)
+            decision=assess_event(run.snapshot,assessed,findings,clock=self.clock,validation_dependency_digest=dependency,source_evidence=run.evidence,source_graph=routing_graph,registry=self.registry)
             assessed=self._with_decision(assessed,decision)
             run.events[event.candidate_id]=assessed
             task.assessments+=(assessed.model_dump_json(),)
@@ -283,9 +298,14 @@ class ReviewStore:
         """Current visible revisions only; never widen assignment or imply completeness."""
         with self._lock:
             task=self._task(task_id,principal,'read');run=self._runs[task.view.run_id]
-            visible=[t.view for t in self._tasks.values() if t.view.run_id==task.view.run_id and self._visible(t.view,principal)]
+            visible=[self._current_view(t.view) for t in self._tasks.values() if t.view.run_id==task.view.run_id and self._visible(t.view,principal)]
             events=tuple(v.current_event for v in visible if v.current_event is not None)
-            packet=CanonicalTimetable(source=self._source(task.view.run_id),evidence=run.evidence,events=events)
+            source_issues=CanonicalTimetable.model_validate_json(run.snapshot.source_json).issues
+            visible_ids={event.candidate_id for event in events}
+            # Reconstruction can replace source candidate IDs. Keep processing
+            # issues without inventing an association to a different event.
+            issues=tuple(issue if issue.candidate_id in visible_ids else issue.model_copy(update={'candidate_id':None}) for issue in source_issues)
+            packet=CanonicalTimetable(source=self._source(task.view.run_id),evidence=run.evidence,events=events,issues=issues)
             return {'packet':packet.model_dump(mode='json'),'reconstruction_context':run.context.model_dump(mode='json') if run.context else {},
                 'tasks':[v.model_dump(mode='json') for v in visible],
                 'scope':'AUTHORIZED_VISIBLE_TASKS_ONLY','complete_schedule_verified':False,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, parse_qsl, urlencode, urlunsplit
 
 import html
 import re
@@ -15,6 +15,7 @@ class TARUMTLoginError(Exception):
 
 class TARUMTNavigationError(Exception):
     """Raised when timetable page cannot be discovered."""
+    reason = "NAVIGATION_UNCONFIRMED"
 
 
 class TARUMTClient:
@@ -33,6 +34,7 @@ class TARUMTClient:
 
     def __init__(self):
 
+        self.stage = "LOGIN_PAGE"
         self.session = requests.Session()
 
         self.session.headers.update(
@@ -66,22 +68,97 @@ class TARUMTClient:
     # HTTP helper
     # -----------------------------------------------------
 
-    def _get(
-        self,
-        url: str,
-        **kwargs
-    ) -> requests.Response:
+    def _trusted_url(self, url: str) -> str:
+        reason, category = 'INVALID_TARGET', 'MALFORMED_URL'
+        safe = False
+        try:
+            if isinstance(url, str) and not any(ord(c) < 32 or ord(c) == 127 for c in url):
+                target, origin = urlsplit(url), urlsplit(self.BASE_URL)
+                if target.scheme != 'https':
+                    reason, category = 'HTTPS_REQUIRED', 'INSECURE_SCHEME'
+                elif target.hostname != origin.hostname or target.port not in (None, 443):
+                    reason, category = 'ORIGIN_NOT_ALLOWED', 'UNTRUSTED_ORIGIN'
+                elif target.username is not None or target.password is not None:
+                    category = 'USERINFO'
+                elif url.startswith(' '):
+                    category = 'LEADING_SPACE'
+                else:
+                    safe = True
+            elif isinstance(url, str):
+                category = 'CONTROL_CHARACTER'
+        except ValueError:
+            pass
+        if not safe:
+            error = TARUMTNavigationError('Institutional request refused: an approved same-origin HTTPS address is required.')
+            error.reason, error.category = reason, category
+            raise error
+        # Match Requests' preparation of path/query spaces and Unicode, after
+        # checking the raw authority and controls. Never normalize an unsafe
+        # origin into an allowed one. Fragments are not sent in HTTP requests.
+        return requests.utils.requote_uri(urlunsplit(target._replace(fragment='')))
 
-        response = self.session.get(
-            url,
-            timeout=30,
-            allow_redirects=True,
-            **kwargs
-        )
+    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
+        options = dict(kwargs)
+        options['timeout'], options['allow_redirects'] = options.get('timeout', 30), False
+        for _ in range(9):
+            try:
+                url = self._trusted_url(url)
+            except TARUMTNavigationError as error:
+                error.step, error.form = 'REQUEST_DESTINATION_VALIDATION', 'ABSOLUTE'
+                raise
+            self.step = 'HTTP_EXECUTION'
+            response = (self.session.post if method == 'POST' else self.session.get)(url, **options)
+            try:
+                response.url = self._trusted_url(response.url)
+            except TARUMTNavigationError as error:
+                error.step, error.form = 'RESPONSE_DESTINATION_VALIDATION', 'ABSOLUTE'
+                response.close()
+                raise
+            response.raise_for_status()
+            if response.status_code not in (301, 302, 303, 307, 308):
+                return response
+            location = response.headers.get('Location')
+            if not location:
+                response.close()
+                error = TARUMTNavigationError('Institutional redirect could not be confirmed.')
+                error.reason, error.step = 'REDIRECT_MISSING', 'REDIRECT_RESOLUTION'
+                raise error
+            form = 'UNKNOWN'
+            try:
+                # urljoin/urlsplit remove some controls; reject them before
+                # resolution so they can never disappear through normalization.
+                if any(ord(c) < 32 or ord(c) == 127 for c in location):
+                    error = TARUMTNavigationError('Institutional redirect address was invalid.')
+                    error.reason, error.category = 'INVALID_TARGET', 'CONTROL_CHARACTER'
+                    raise error
+                parts = urlsplit(location)
+                form = ('PROTOCOL_RELATIVE' if location.startswith('//') else 'ABSOLUTE' if parts.scheme else
+                        'QUERY_ONLY' if location.startswith('?') else 'FRAGMENT_ONLY' if location.startswith('#') else 'RELATIVE')
+                next_url = urljoin(response.url, location)
+            except (ValueError, TARUMTNavigationError) as failure:
+                error = failure if isinstance(failure, TARUMTNavigationError) else TARUMTNavigationError('Institutional redirect address was invalid.')
+                error.reason = 'INVALID_TARGET'
+                error.category = getattr(error, 'category', 'MALFORMED_URL')
+                error.step, error.form = 'REDIRECT_RESOLUTION', form
+                raise error from None
+            finally:
+                response.close()
+            try:
+                next_url = self._trusted_url(next_url)
+            except TARUMTNavigationError as error:
+                error.step, error.form = 'REDIRECT_VALIDATION', form
+                raise
+            if response.status_code == 303 or (method == 'POST' and response.status_code in (301, 302)):
+                method = 'GET'
+                options.pop('data', None)
+                options.pop('json', None)
+            url = next_url
+        error = TARUMTNavigationError('Institutional redirect limit reached. Please reconnect explicitly.')
+        error.reason, error.step = 'REDIRECT_LIMIT', 'REDIRECT_VALIDATION'
+        raise error
 
-        response.raise_for_status()
-
-        return response
+    def _get(self, url: str, **kwargs) -> requests.Response:
+        return self._request('GET',url,**kwargs)
 
     # -----------------------------------------------------
     # LOGIN
@@ -93,6 +170,10 @@ class TARUMTClient:
         password: str
     ) -> None:
 
+        self.stage = "LOGIN_PAGE"
+        self.logged_in = False
+        self.student_name = None
+        self.last_timetable_url = None
         student_id = student_id.strip()
 
         if not student_id:
@@ -159,13 +240,29 @@ class TARUMTClient:
 
         form_action = (
             login_form.get("action")
-            or "loginProcess.jsp"
+            or login_page.url
         )
 
-        login_action_url = urljoin(
-            login_page.url,
-            form_action
-        )
+        self.stage = 'LOGIN_SUBMISSION'
+        form = 'UNKNOWN'
+        try:
+            if any(ord(c) < 32 or ord(c) == 127 for c in form_action):
+                error = TARUMTNavigationError('Institutional form address was invalid.')
+                error.category = 'CONTROL_CHARACTER'
+                raise error
+            parts = urlsplit(form_action)
+            form = 'PROTOCOL_RELATIVE' if form_action.startswith('//') else 'ABSOLUTE' if parts.scheme else 'RELATIVE'
+            login_action_url = urljoin(login_page.url, form_action)
+        except (ValueError, TARUMTNavigationError) as failure:
+            error = failure if isinstance(failure, TARUMTNavigationError) else TARUMTNavigationError('Institutional form address was invalid.')
+            error.reason, error.step, error.form = 'INVALID_TARGET', 'FORM_ACTION_RESOLUTION', form
+            error.category = getattr(error, 'category', 'MALFORMED_URL')
+            raise error from None
+        try:
+            login_action_url = self._trusted_url(login_action_url)
+        except TARUMTNavigationError as error:
+            error.step, error.form = 'FORM_ACTION_VALIDATION', form
+            raise
 
         # ---------------------------------------------
         # Preserve all hidden fields.
@@ -278,14 +375,14 @@ class TARUMTClient:
         # in memory automatically.
         # ---------------------------------------------
 
-        response = self.session.post(
-            login_action_url,
+        self.stage = "LOGIN_SUBMISSION"
+        response = self._request(
+            'POST', login_action_url,
             data=payload,
             headers={
                 "Referer": login_page.url
             },
-            timeout=30,
-            allow_redirects=True
+            timeout=30
         )
 
         response.raise_for_status()
@@ -335,26 +432,18 @@ class TARUMTClient:
             for signal in success_signals
         )
 
-        if success_count < 2:
+        if success_count < 2 or not self._authenticated_page(response_text):
 
             # One extra authenticated request is useful
             # because some login processors redirect.
+            self.stage = "LOGIN_CONFIRMATION"
             test_page = self._get(
                 self.TIMETABLE_SESSION_URL
             )
 
-            test_text = (
-                test_page.text.lower()
-            )
-
-            if (
-                "login id" in test_text
-                and
-                "password" in test_text
-            ):
-
+            if not self._authenticated_page(test_page.text):
                 raise TARUMTLoginError(
-                    "Login did not create an authenticated TAR UMT session."
+                    "Login did not create a confirmed authenticated TAR UMT session."
                 )
 
             response_text = (
@@ -362,6 +451,7 @@ class TARUMTClient:
             )
 
         self.logged_in = True
+        self.stage = "AUTHENTICATED"
 
         self.student_name = (
             self._extract_student_name(
@@ -413,550 +503,87 @@ class TARUMTClient:
     # Discover latest timetable URL
     # -----------------------------------------------------
 
+    @staticmethod
+    def _authenticated_page(content: str) -> bool:
+        # A login/challenge form must never become an authenticated session.
+        soup = BeautifulSoup(content, "lxml")
+        if soup.find("input", type=re.compile("^password$", re.I)):
+            return False
+        lower = content.lower()
+        return "logout.jsp" in lower or "user-info" in lower
+
+    def _timetable_url(self, base: str, target: str) -> str | None:
+        url = self._trusted_url(urljoin(base, html.unescape(target)))
+        parts = urlsplit(url)
+        if parts.path != urlsplit(self.TIMETABLE_SESSION_URL).path.replace("viewSession.jsp", "viewTimetable.jsp"):
+            return None
+        pairs = parse_qsl(parts.query, keep_blank_values=True)
+        params = dict(pairs)
+        required = ("fsid", "fsession", "fbrncd")
+        # Never invent identifiers/branch or choose among conflicting values.
+        if any(sum(k == key for k, _ in pairs) != 1 or not params.get(key, "").strip() for key in required):
+            return None
+        if not re.fullmatch(r"\d{6}", params["fsession"]):
+            return None
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(pairs), ""))
+
     def discover_timetable_url(self) -> str:
-
         if not self.logged_in:
-            raise TARUMTLoginError(
-                "TAR UMT session is not authenticated."
-            )
-
-        # =====================================================
-        # Open TAR UMT My Timetable session page
-        # =====================================================
-
-        response = self._get(
-            self.TIMETABLE_SESSION_URL
-        )
-
-        html_content = response.text
-
-
-        # =====================================================
-        # Verify authenticated session
-        # =====================================================
-
-        lower_html = html_content.lower()
-
-        if (
-            "logout.jsp" not in lower_html
-            and
-            "user-info" not in lower_html
-        ):
+            raise TARUMTLoginError("TAR UMT session is not authenticated.")
+        self.stage = "SESSION_PAGE"
+        response = self._get(self.TIMETABLE_SESSION_URL)
+        self.stage = "SESSION_NAVIGATION"
+        if not self._authenticated_page(response.text):
             self.logged_in = False
-
-            raise TARUMTLoginError(
-                "TAR UMT authenticated session was not found."
-            )
-
-        # =====================================================
-        # TAR UMT viewSession.jsp uses:
-        #
-        # getTimetable(
-        #   'EE87EAF9-42BF-4D1A-A3BA-6E694BD60AB0',
-        #   '202605',
-        #   'KL'
-        # )
-        #
-        # Find ALL accessible timetable buttons.
-        # =====================================================
-
-        matches = re.findall(
-            r"""
-            getTimetable
-            \(
-                \s*['"]([^'"]+)['"]
-                \s*,\s*
-                ['"](\d{6})['"]
-                \s*,\s*
-                ['"]([^'"]+)['"]
-                \s*
-            \)
-            """,
-            html_content,
-            re.IGNORECASE | re.VERBOSE
-        )
-
-        if not matches:
-
-            raise TARUMTNavigationError(
-                "TAR UMT login succeeded, but no accessible "
-                "timetable session was found in viewSession.jsp."
-            )
-
-        # =====================================================
-        # TAR UMT lists newest accessible session first.
-        #
-        # Example:
-        # 202605
-        # 202601
-        # 202505
-        #
-        # So take the first View Timetable button.
-        # =====================================================
-
-        fsid, fsession, fbrncd = matches[0]
-
-        fsid = fsid.strip()
-        fsession = fsession.strip()
-        fbrncd = fbrncd.strip()
-
-        if not fsid:
-
-            raise TARUMTNavigationError(
-                "TAR UMT returned an empty fsid."
-            )
-
-        # =====================================================
-        # Construct exactly the URL used by TAR UMT JavaScript
-        # =====================================================
-
-        from urllib.parse import urlencode
-
-        timetable_url = urljoin(
-            response.url,
-            "viewTimetable.jsp"
-        )
-
-        params = {
-            "fsid": fsid,
-            "fsession": fsession,
-            "fbrncd": fbrncd
-        }
-
-        timetable_url += (
-            "?"
-            + urlencode(params)
-        )
-
-        self.last_timetable_url = timetable_url
-
-
-        return timetable_url
-
-        # =====================================================
-        # METHOD 2
-        #
-        # Search JavaScript / onclick / raw HTML for:
-        #
-        # viewTimetable.jsp?fsid=XXX
-        # &fsession=202605
-        # &fbrncd=KL
-        # =====================================================
-
-        timetable_match = re.search(
-            r"""
-            viewTimetable\.jsp
-            \?
-            [^"'<>]*?
-            fsid=([^&"'<>]+)
-            &
-            fsession=(\d{6})
-            (?:&
-            fweek=(\d+))?
-            &
-            fbrncd=([^&"'<>]+)
-            """,
-            html_content,
-            re.IGNORECASE
-            | re.VERBOSE
-        )
-
-        if timetable_match:
-
-            fsid = (
-                timetable_match
-                .group(1)
-                .strip()
-            )
-
-            fsession = (
-                timetable_match
-                .group(2)
-                .strip()
-            )
-
-            fweek = (
-                timetable_match
-                .group(3)
-            )
-
-            fbrncd = (
-                timetable_match
-                .group(4)
-                .strip()
-            )
-
-            if fsid:
-
-                from urllib.parse import urlencode
-
-                params = {
-                    "fsid": fsid,
-                    "fsession": fsession,
-                    "fbrncd": fbrncd
-                }
-
-                if fweek:
-                    params["fweek"] = fweek
-
-                timetable_url = urljoin(
-                    response.url,
-                    "viewTimetable.jsp"
-                )
-
-                timetable_url += (
-                    "?"
-                    + urlencode(params)
-                )
-
-                self.last_timetable_url = (
-                    timetable_url
-                )
-
-
-
-                return timetable_url
-
-        # =====================================================
-        # METHOD 3
-        #
-        # Look for TAR UMT's JavaScript:
-        #
-        # getWeek(
-        #   'EE87EAF9-...',
-        #   '202605',
-        #   'KL'
-        # )
-        #
-        # We already know from your real timetable response
-        # that TAR UMT uses this structure.
-        # =====================================================
-
-        getweek_match = re.search(
-            r"""
-            getWeek
-            \(
-            \s*
-            ['"]([^'"]+)['"]
-            \s*,\s*
-            ['"](\d{6})['"]
-            \s*,\s*
-            ['"]([^'"]+)['"]
-            \s*
-            \)
-            """,
-            html_content,
-            re.IGNORECASE
-            | re.VERBOSE
-        )
-
-        if getweek_match:
-
-            fsid = (
-                getweek_match
-                .group(1)
-                .strip()
-            )
-
-            fsession = (
-                getweek_match
-                .group(2)
-                .strip()
-            )
-
-            fbrncd = (
-                getweek_match
-                .group(3)
-                .strip()
-            )
-
-            if not fsid:
-
-                raise TARUMTNavigationError(
-                    "TAR UMT getWeek() was found "
-                    "but fsid is empty."
-                )
-
-            # ---------------------------------------------
-            # Find selected/current week if it exists
-            # ---------------------------------------------
-
-            selected_week = (
-                soup.select_one(
-                    "#fweek option[selected]"
-                )
-            )
-
-            fweek = None
-
-            if selected_week:
-
-                value = (
-                    selected_week
-                    .get("value")
-                )
-
-                if value:
-                    fweek = value.strip()
-
-            from urllib.parse import urlencode
-
-            params = {
-                "fsid": fsid,
-                "fsession": fsession,
-                "fbrncd": fbrncd
-            }
-
-            if fweek:
-                params["fweek"] = fweek
-
-            timetable_url = urljoin(
-                response.url,
-                "viewTimetable.jsp"
-            )
-
-            timetable_url += (
-                "?"
-                + urlencode(params)
-            )
-
-            self.last_timetable_url = (
-                timetable_url
-            )
-
-
-
-            return timetable_url
-
-        # =====================================================
-        # Nothing valid found.
-        #
-        # IMPORTANT:
-        # Never create:
-        #
-        # viewTimetable.jsp?fsid=
-        #
-        # anymore.
-        # =====================================================
-
-        raise TARUMTNavigationError(
-            "TAR UMT login appears successful, but no "
-            "complete timetable parameters were found in "
-            "viewSession.jsp. Debug response saved as "
-            "data/temp/view_session_response.html."
-        )
-
-        if not self.logged_in:
-            raise TARUMTLoginError(
-                "TAR UMT session is not authenticated."
-            )
-
-        response = self._get(
-            self.TIMETABLE_SESSION_URL
-        )
-
-        # Sometimes navigation itself may already
-        # redirect to timetable.
-
-        if "viewTimetable.jsp" in response.url:
-
-            self.last_timetable_url = (
-                response.url
-            )
-
-            return response.url
-
-        soup = BeautifulSoup(
-            response.text,
-            "lxml"
-        )
-
-        # ---------------------------------------------
-        # Method 1:
-        # Look for normal timetable hyperlink.
-        # ---------------------------------------------
-
-        for link in soup.find_all(
-            "a",
-            href=True
-        ):
-
-            href = html.unescape(
-                link["href"]
-            )
-
-            if "viewTimetable.jsp" in href:
-
-                url = urljoin(
-                    response.url,
-                    href
-                )
-
-                self.last_timetable_url = url
-
-                return url
-
-        # ---------------------------------------------
-        # Method 2:
-        # Look inside forms.
-        # ---------------------------------------------
-
+            raise TARUMTLoginError("TAR UMT authenticated session was not found.")
+        soup = BeautifulSoup(response.text, "lxml")
+        candidates = []
+        # Navigation may already have reached the actual timetable.
+        if urlsplit(response.url).path.endswith("/viewTimetable.jsp"):
+            candidates.append(response.url)
+        # Preserve the portal's distinct operations: session opening does not
+        # use a selected week. Only the getWeek fallback uses that source value.
+        # Prefer getTimetable even when a getWeek call occurs earlier in HTML.
+        content = html.unescape(response.text)
+        for function in ("getTimetable", "getWeek"):
+            pattern = rf"{function}\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"](\d{{6}})['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)"
+            for match in re.finditer(pattern, content, re.I):
+                params = dict(zip(("fsid", "fsession", "fbrncd"), (value.strip() for value in match.groups())))
+                if function == "getWeek":
+                    week = soup.select_one("#fweek option[selected]")
+                    if week and week.get("value"):
+                        params["fweek"] = week["value"].strip()
+                candidates.append("viewTimetable.jsp?" + urlencode(params))
+        for link in soup.find_all("a", href=True):
+            if "viewTimetable.jsp" in link["href"]:
+                candidates.append(link["href"])
         for form in soup.find_all("form"):
-
-            action = (
-                form.get("action")
-                or ""
-            )
-
-            if "viewTimetable.jsp" not in action:
+            action = form.get("action", "")
+            # Do not turn a POST form into a guessed GET operation.
+            if "viewTimetable.jsp" not in action or form.get("method", "get").lower() != "get":
                 continue
-
-            params = {}
-
-            for field in form.find_all(
-                ["input", "select"]
-            ):
-
-                name = field.get("name")
-
-                if not name:
+            parts = urlsplit(urljoin(response.url, action))
+            params = parse_qsl(parts.query, keep_blank_values=True)
+            for field in form.find_all(["input", "select"]):
+                if not field.get("name") or field.has_attr("disabled"):
                     continue
-
                 if field.name == "select":
-
-                    selected = field.find(
-                        "option",
-                        selected=True
-                    )
-
-                    if not selected:
-                        selected = (
-                            field.find("option")
-                        )
-
-                    if selected:
-
-                        params[name] = (
-                            selected.get("value")
-                            or ""
-                        )
-
+                    selected = field.find("option", selected=True) or field.find("option")
+                    if selected is None:
+                        continue
+                    value = selected.get("value", selected.get_text())
                 else:
-
-                    params[name] = (
-                        field.get("value")
-                        or ""
-                    )
-
-            base = urljoin(
-                response.url,
-                action
-            )
-
-            if params:
-
-                query = "&".join(
-                    f"{key}={value}"
-                    for key, value
-                    in params.items()
-                )
-
-                base = (
-                    f"{base}?{query}"
-                )
-
-            self.last_timetable_url = base
-
-            return base
-
-        # ---------------------------------------------
-        # Method 3:
-        # Search raw HTML / JavaScript.
-        # ---------------------------------------------
-
-        raw_match = re.search(
-            r"""viewTimetable\.jsp\?[^"'<>\\\s]+""",
-            response.text,
-            re.IGNORECASE
-        )
-
-        if raw_match:
-
-            relative_url = html.unescape(
-                raw_match.group(0)
-            )
-
-            url = urljoin(
-                response.url,
-                relative_url
-            )
-
-            self.last_timetable_url = url
-
-            return url
-
-        # ---------------------------------------------
-        # Method 4:
-        # Find fsid / session / branch separately.
-        # ---------------------------------------------
-
-        fsid_match = re.search(
-            r"""fsid[='":\s]+([A-F0-9-]{20,})""",
-            response.text,
-            re.IGNORECASE
-        )
-
-        session_match = re.search(
-            r"""fsession[='":\s]+(\d{6})""",
-            response.text,
-            re.IGNORECASE
-        )
-
-        branch_match = re.search(
-            r"""fbrncd[='":\s]+([A-Z]{2,5})""",
-            response.text,
-            re.IGNORECASE
-        )
-
-        if (
-            fsid_match
-            and
-            session_match
-        ):
-
-            fsid = (
-                fsid_match.group(1)
-            )
-
-            semester = (
-                session_match.group(1)
-            )
-
-            branch = (
-                branch_match.group(1)
-                if branch_match
-                else "KL"
-            )
-
-            url = urljoin(
-                response.url,
-                (
-                    "viewTimetable.jsp"
-                    f"?fsid={fsid}"
-                    f"&fsession={semester}"
-                    f"&fbrncd={branch}"
-                )
-            )
-
-            self.last_timetable_url = url
-
-            return url
-
-        raise TARUMTNavigationError(
-            "Authenticated successfully, but the current "
-            "timetable URL could not be discovered from "
-            "courseReg/viewSession.jsp."
-        )
+                    if field.get("type", "text").lower() not in ("hidden", "text"):
+                        continue
+                    value = field.get("value", "")
+                params.append((field["name"], value))
+            candidates.append(urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(params), parts.fragment)))
+        for candidate in candidates:
+            url = self._timetable_url(response.url, candidate)
+            if url:
+                self.last_timetable_url = url
+                return url
+        raise TARUMTNavigationError("No complete, source-supported timetable link was found in the authenticated institutional page.")
 
     # -----------------------------------------------------
     # Fetch live timetable HTML
@@ -971,9 +598,11 @@ class TARUMTClient:
         )
 
 
+        self.stage = "TIMETABLE_FETCH"
         response = self._get(
             timetable_url
         )
+        self.stage = "TIMETABLE_CONTENT"
 
         html_content = (
             response.text
@@ -1002,11 +631,7 @@ class TARUMTClient:
         # Check authentication
         # =====================================================
 
-        if (
-            "logout.jsp" not in lower_text
-            and
-            "user-info" not in lower_text
-        ):
+        if not self._authenticated_page(html_content):
 
             self.logged_in = False
 
@@ -1062,16 +687,20 @@ class TARUMTClient:
                     "logout.jsp"
                 )
 
-                self.session.get(
+                self._get(
                     logout_url,
                     timeout=10
                 )
 
-        except requests.RequestException:
+        except (requests.RequestException, TARUMTNavigationError):
             pass
 
         finally:
 
-            self.session.close()
-
-            self.logged_in = False
+            try:
+                self.session.cookies.clear()
+            finally:
+                self.session.close()
+                self.logged_in = False
+                self.student_name = None
+                self.last_timetable_url = None

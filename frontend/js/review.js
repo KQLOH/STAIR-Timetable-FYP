@@ -117,14 +117,15 @@
             const abort=new AbortController();const timer=setTimeout(()=>abort.abort(),30000);
             const generation=this.generation;this.inflight.add(abort);
             const options={method,credentials:'omit',cache:'no-store',signal:abort.signal,headers:{}};
-            if(body!==undefined) {options.headers['Content-Type']='application/json';options.body=typeof body==='string'?body:JSON.stringify(body);}
+            if(body!==undefined) {const binary=typeof global.Blob!=='undefined' && body instanceof global.Blob;options.headers['Content-Type']=binary?body.type:'application/json';options.body=binary?body:typeof body==='string'?body:JSON.stringify(body);}
             try {
                 const response=await (!publicRequest && this.transport ? this.transport(this.base+path,options) : global.fetch(this.base+path,options));
                 const payload=await response.json();
                 if(generation!==this.generation)throw new ReviewClientError(403,'UNAUTHORIZED_REVIEW');
                 if(!response.ok) {
                     const detail=payload?.detail, code=typeof detail==='string'?detail:detail?.code;
-                    throw new ReviewClientError(response.status,typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?code:'REVIEW_REQUEST_REJECTED',detail?.proposal_retained===true);
+                    const error=new ReviewClientError(response.status,typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?code:'REVIEW_REQUEST_REJECTED',detail?.proposal_retained===true);
+                    error.fieldErrors=Array.isArray(detail?.field_errors)?detail.field_errors:[];throw error;
                 }
                 return payload;
             } finally {clearTimeout(timer);this.inflight.delete(abort);}
@@ -149,7 +150,7 @@
             disabled('inspectCanonical',!this.getSource()?.packet?.events?.length);
             const source=this.getSource()?.packet?.source;
             const inScope=this.session?.source_bindings?.some(([id,hash])=>source?.source_document_id===id && source.content_sha256===hash);
-            disabled('ingestReviewSource',!this.permitted('queue') || !inScope || !this.getSource()?.result?.reconstruction || source?.route==='tarumt_html');
+            disabled('ingestReviewSource',!this.permitted('queue') || !inScope || !this.getSource()?.result?.reconstruction);
             disabled('reviewCorrectionControls',!this.canCorrect());
             disabled('claimReviewTask',!task || !this.permitted('assign') || !['PENDING_REVIEW','ASSIGNED_REVIEW','ESCALATED'].includes(this.task.state));
             disabled('startReviewTask',!task || !this.permitted('correct') || this.task.assignee!==this.session?.actor_reference || !['ASSIGNED_REVIEW','REVALIDATED','REVALIDATION_REQUIRED'].includes(this.task.state));
@@ -282,7 +283,7 @@
                 // Caller-supplied read-only diagnostics remain blocked. No
                 // approval, validation mutation or original prediction rewrite.
                 try {
-                    const preview=await this.request('POST','/api/calendar/v1/preview',{bundle:{packet:snapshot.packet,context:{},assessments:[],reconstruction_status:'NOT_PROVIDED'}},true);
+                    const preview=await this.request('POST','/api/calendar/v1/preview',{bundle:global.STAIRUpload.calendarBundle(snapshot.packet,'NOT_PROVIDED',snapshot.tasks.map(t=>t.decision))},true);
                     if(preview.write_authorized!==false)throw Error('Unexpected calendar authorization.');
                 }catch(error){if(error.status===403)throw error;if(stillCurrent())set('savedReviewStatus',`Saved reviews connected: ${corrected} human-corrected class(es). Current cards are available; calendar diagnostics could not be refreshed. Writes remain blocked.`);}
             });
@@ -437,7 +438,7 @@
             out.append(node('h3','Current revision read-only diagnostics'),node('p',`${snapshot.scope}. Complete schedule verified: false. Old previews are invalidated.`));
             // Reconstruction relationships are not calendar authority. Preserve
             // them in the snapshot; do not silently map them into M6 context.
-            const bundle={packet:snapshot.packet,context:{},assessments:[],reconstruction_status:'NOT_PROVIDED'};
+            const bundle=global.STAIRUpload.calendarBundle(snapshot.packet,'NOT_PROVIDED',snapshot.tasks.map(t=>t.decision));
             const preview=await this.request('POST','/api/calendar/v1/preview',{bundle},true);
             if(preview.write_authorized!==false)throw Error('Unexpected calendar authorization response.');
             out.append(node('p','Calendar writes blocked. No old approval or preview is reused.'),details('Current read-only preview',preview));

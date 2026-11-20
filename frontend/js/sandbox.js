@@ -5,6 +5,38 @@
     const node=(tag,text)=>{const n=global.document.createElement(tag);if(text!=null)n.textContent=String(text);return n;};
     const detail=(title,value)=>{const n=node('details');n.append(node('summary',title),node('pre',JSON.stringify(value,null,2)));return n;};
     const prefix='/api/calendar/v1/test-only';
+    function dateLabel(value){
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(value || ''))return 'Date not confirmed';
+        const date=new Date(value+'T00:00:00Z');
+        return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}).format(date) : 'Date not confirmed';
+    }
+    function occurrenceLabel(occurrence){
+        const start=/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(occurrence.start);
+        const end=/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(occurrence.end);
+        return start && end ? `${dateLabel(start[1])} · ${start[2]} – ${start[1]===end[1]?'':dateLabel(end[1])+' '}${end[2]}` : 'Date or time not confirmed';
+    }
+    function eventCard(content, title='Invented class'){
+        const card=node('article');card.setAttribute('class','sandbox-sample-card');
+        card.append(node('h4',`${title}: ${content.course_code || content.course_name || 'Unresolved class'}`));
+        if(content.course_name)card.append(node('p',content.course_name));
+        const occurrence=content.occurrences?.[0];
+        card.append(node('p',occurrence ? occurrenceLabel(occurrence) : `${dateLabel(content.date)} · ${content.start_time || '?'} – ${content.end_time || '?'}`),
+            node('p',`${content.session_type || 'Class type not confirmed'} · Timezone: ${content.source_timezone || 'not confirmed'}`),node('p',`Venue: ${content.location || 'not confirmed'}`));
+        if(content.lecturer)card.append(node('p','Lecturer: '+content.lecturer));
+        if(content.section)card.append(node('p','Group: '+content.section));
+        if(content.occurrences?.length>1)card.append(node('p',`${content.occurrences.length} dated occurrences; inspect every date in Advanced Details.`));
+        if(content.recurrence)card.append(node('p','Repeat schedule is part of the exact proposal; inspect its dates in Advanced Details.'));
+        return card;
+    }
+    function reasonMessage(code){
+        if(code.includes('TIMEZONE'))return 'The source timezone is not confirmed.';
+        if(code.includes('RECURRENCE') || code.includes('TERM') || code.includes('WEEK_'))return 'The repeat schedule or its date range is not fully supported.';
+        if(code.includes('TIME') || code.includes('TEMPORAL') || code.includes('DATE'))return 'The class date or time needs confirmation.';
+        if(code.includes('M5') || code.includes('POLICY') || code.includes('VERIFICATION'))return 'The required acceptance or verification evidence is unavailable.';
+        return 'A required source or safety check is incomplete. See Advanced Details.';
+    }
+
+    const knownRefusals=new Set(['APPROVAL_EXPIRED','APPROVAL_REVOKED','APPROVAL_GRANT_MISMATCH','APPROVAL_NOT_FOUND','STALE_APPROVAL','STALE_PREVIEW','STALE_SOURCE_REVISION','SOURCE_REVISION_CONFLICT','NO_RECORDED_ATTEMPT']);
     const messages={
         TEST_ONLY_CALENDAR_HOST_NOT_CONFIGURED:'The approved TEST_ONLY host is not configured. Public calendar writes remain blocked.',
         STALE_SOURCE_REVISION:'The source revision changed. Request a fresh preview and owner approval.',
@@ -81,6 +113,7 @@
             try{await work();}catch(error){
                 // A superseded response must neither replace the new guidance nor end a newer view.
                 if(generation!==this.generation)return;
+                if(knownRefusals.has(error.code)){this.plan=null;this.approval=null;el('sandboxOwnerConfirmation').checked=false;}
                 if(error.status===403 && !['APPROVAL_REVOKED','APPROVAL_GRANT_MISMATCH'].includes(error.code))this.forget();
                 this.status((error.confirmed?'The operation was confirmed, but the history refresh failed. ':'')+(error instanceof SandboxError?error.message:'Outcome could not be confirmed. Refresh history and reconcile the recorded attempt; do not assume failure or resubmit blindly.'));
             }finally{this.actionGeneration=undefined;this.busy=false;this.controls();if(global.document.activeElement===global.document.body && opener?.isConnected && !opener.disabled)opener.focus();}
@@ -90,7 +123,7 @@
             if(this.session.mode!=='TEST_ONLY' || this.session.external_calendar!==false)throw new SandboxError(403,'INVALID_TEST_SCOPE');
             const remaining=Date.parse(this.session.expires_at)-Date.now();if(!Number.isFinite(remaining)||remaining<=0||remaining>61*60000)throw new SandboxError(403,'SESSION_EXPIRED');
             clearTimeout(this.expiry);this.expiry=setTimeout(()=>{this.forget();this.status('TEST_ONLY authorization expired. Private sandbox views cleared.');},remaining);this.expiry.unref?.();
-            el('sandboxAuthorization').textContent=`TEST_ONLY operator ${this.session.actor_reference} · target ${this.session.target_sandbox_id} · expires ${this.session.expires_at}. Local journal only; no external calendar.`;
+            el('sandboxAuthorization').textContent=`Owner-authorized TEST_ONLY access · expires ${this.session.expires_at}. Invented data only; no external calendar.`;
             el('sandboxFixture').replaceChildren();for(const f of this.session.fixtures){const o=node('option',f.label);o.value=f.fixture_id;el('sandboxFixture').append(o);}
             this.selectFixture({initial:true});await this.history(false);this.status('Approved TEST_ONLY session loaded. Inspect a registered synthetic timetable, then request a new preview and explicit owner approval before execution.');
         });}
@@ -100,15 +133,32 @@
             this.plan=null;this.approval=null;this.uncertain=false;clearTimeout(this.approvalExpiry);
             el('sandboxOwnerConfirmation').checked=false;el('sandboxPreview').replaceChildren();el('sandboxExecution').replaceChildren();
             const f=this.session?.fixtures.find(f=>f.fixture_id===el('sandboxFixture').value);el('sandboxSource').replaceChildren();
-            if(f)el('sandboxSource').append(detail('Registered TEST_ONLY source and canonical revisions',{source:f.source,events:f.events}));
+            if(f){
+                for(const event of f.events)el('sandboxSource').append(eventCard(event.revision.content,'Invented source class'));
+                el('sandboxSource').append(detail('Advanced Details: registered TEST_ONLY source and canonical revisions',{source:f.source,events:f.events}));
+            }
             this.status('Synthetic fixture selected. Previous preview and approval cleared from this view. A new preview and explicit owner approval are required. Check history for any earlier pending operation.');
             this.controls();
         }
         async preview(){if(!this.permitted('preview'))return;await this.action(async()=>{
             this.plan=null;this.approval=null;el('sandboxOwnerConfirmation').checked=false;el('sandboxPreview').replaceChildren();
             this.plan=await this.request('POST','/preview',{fixture_id:el('sandboxFixture').value});
-            const p=this.plan,out=el('sandboxPreview');out.append(node('p',`TEST_ONLY target ${p.target_sandbox_id}; snapshot ${p.snapshot_version}; ${p.operations.length} operation(s). Preview is not execution.`),detail('Exact preview and source binding',{preview_digest:p.preview_digest,snapshot_digest:p.snapshot_digest,input_digest:p.input_digest,source_bindings:p.source_bindings}),detail('Eligibility assessment (operational writes remain BLOCKED)',p.eligibility));
-            for(const o of p.operations)out.append(detail(`${o.action} · ${o.after?.course_code || o.before?.course_code || 'unresolved'} · ${o.operation_key}`,{before:o.before,after:o.after,changed_fields:o.changed_fields,reason_codes:o.reason_codes}));
+            const p=this.plan,out=el('sandboxPreview');out.append(node('p',`TEST_ONLY · ${p.operations.length} proposed action(s). Preview is not execution.`));
+            const issues=p.eligibility.filter(e=>!e.sandbox_write_permitted);
+            out.append(node('p',issues.length?'Some invented classes are blocked. Check the reasons below.':'These invented classes are eligible only for this local test sandbox. Real calendar writes remain blocked.'));
+            for(const issue of issues)for(const reason of [...new Set(issue.reason_codes.map(reasonMessage))])out.append(node('p',reason));
+            for(const o of p.operations){
+                const card=node('article');card.setAttribute('class','sandbox-operation'+(['BLOCKED','CONFLICT','MISSING_OBSERVATION'].includes(o.action)?' sandbox-blocked':''));
+                card.append(node('h4',`${o.action==='MISSING_OBSERVATION'?'Source class missing':o.action} · ${o.after?.course_code || o.before?.course_code || 'Unresolved class'}`));
+                if(o.before)card.append(eventCard(o.before,'Before'));
+                if(o.after)card.append(eventCard(o.after,'After'));
+                if(o.action==='NO_OP')card.append(node('p','Already matches the local calendar. No event will be added or changed.'));
+                if(o.action==='CREATE')card.append(node('p','Add this invented class to the local calendar.'));
+                if(o.action==='UPDATE')card.append(node('p','Change the existing local class; no duplicate will be created.'));
+                if(o.reason_codes.length)for(const reason of [...new Set(o.reason_codes.map(reasonMessage))])card.append(node('p',reason));
+                card.append(detail('Advanced Details: exact before/after action',{before:o.before,after:o.after,changed_fields:o.changed_fields,reason_codes:o.reason_codes}));out.append(card);
+            }
+            out.append(detail('Advanced Details: exact preview and source binding',{preview_digest:p.preview_digest,snapshot_digest:p.snapshot_digest,input_digest:p.input_digest,source_bindings:p.source_bindings}),detail('Advanced Details: eligibility assessment (operational writes remain BLOCKED)',p.eligibility));
             this.status('Preview confirmed. Inspect the exact before/after values and evidence before owner approval. No execution has occurred.');
         });}
         async approve(){
@@ -122,7 +172,13 @@
         }
         results(data){
             const out=el('sandboxExecution');out.replaceChildren();
-            for(const o of data.outcomes)out.append(node('p',`${o.status} · ${o.reason_code} · ${o.operation_key}${o.duplicate_submission?' · duplicate request observed; not resent':''}`));
+            for(const o of data.outcomes){
+                const operation=[...(this.plan?.operations || []),...(this.historyData?.approved_previews || []).flatMap(p=>p.operations)].find(p=>p.operation_key===o.operation_key);
+                const replayConfirmed=o.duplicate_submission && o.status==='CONFIRMED';
+                const action=replayConfirmed?'NO_OP (replay)':o.duplicate_submission?'Recorded attempt (not resent)':operation?.action || 'Local action';
+                const outcome=o.status==='CONFIRMED'?'Confirmed in local calendar':o.status==='FAILED_CONFIRMED'?'Not applied':o.status==='PREVIEW_REQUIRED'?'Fresh preview and approval required':'Needs reconciliation';
+                out.append(node('p',`${action} · ${operation?.after?.course_code || operation?.before?.course_code || 'Invented class'} · ${outcome}${replayConfirmed?' · previously confirmed; not resent':o.duplicate_submission?' · no new action was sent':''}`),detail('Advanced Details: observed result',o));
+            }
             out.append(node('p','Confirmation concerns observed local sandbox state only. No Google Calendar synchronization is claimed.'));
         }
         async execute(replay=false){
@@ -132,9 +188,11 @@
             await this.action(async()=>{let confirmed=false;try{
                 const data=await this.request('POST','/execute',{approval_id:id,failure_scenario:replay?'NONE':el('sandboxFailure').value,replay_only:replay});confirmed=true;
                 this.results(data);this.uncertain=data.outcomes.some(o=>['PENDING','OUTCOME_UNKNOWN','RECONCILIATION_REQUIRED'].includes(o.status));
-                this.approval=null;this.status(this.uncertain?'Outcome uncertain. Reconcile the recorded attempt before another approval.':'Backend reported local outcomes. Inspect each result; partial failure is not full success.');
+                this.approval=null;this.plan=null;el('sandboxOwnerConfirmation').checked=false;
+                el('sandboxPreview').append(node('p','This preview is now historical. Request a fresh preview before another approval.'));
+                this.status(this.uncertain?'Outcome uncertain. Reconcile the recorded attempt before another approval.':'Backend reported local outcomes. Inspect each result; request a fresh preview before another approval.');
                 await this.history(false);
-            }catch(e){if(confirmed)e.confirmed=true;else if(this.actionGeneration===this.generation)this.uncertain=true;throw e;}});
+            }catch(e){if(confirmed)e.confirmed=true;else if(this.actionGeneration===this.generation)this.uncertain=!knownRefusals.has(e.code);throw e;}});
         }
         async reconcile(){const id=this.selectedApproval();if(!id||!this.permitted('reconcile'))return;await this.action(async()=>{
             const data=await this.request('POST','/reconcile',{approval_id:id});this.results(data);this.uncertain=data.outcomes.some(o=>['PENDING','OUTCOME_UNKNOWN','RECONCILIATION_REQUIRED'].includes(o.status));this.approval=null;
@@ -146,12 +204,16 @@
         });}
         async history(withAction=true){
             const work=async()=>{const history=await this.request('GET','/history'),state=await this.request('GET','/state');this.historyData=history;
-                const out=el('sandboxHistory');out.replaceChildren();out.append(node('h4','Persistent TEST_ONLY local journal'),node('p',`${state.entries.length} local entries; target version ${state.calendar_version}; ${history.staging_file_count} retained staging file(s). Integrity checked, not encrypted or externally signed.`),detail('Current local entries',state.entries));
-                for(const r of history.journal)out.append(detail(`${r.sequence} · ${r.operation} · ${r.recorded_at}`,r));
-                for(const p of history.approved_previews || [])out.append(detail(`Historical approved exact diff · ${p.preview_digest}`,{source_bindings:p.source_bindings,operations:p.operations}));
-                out.append(detail('Recorded outcomes and recovery state',history.outcomes));
+                const out=el('sandboxHistory');out.replaceChildren();out.append(node('h4','Local TEST_ONLY calendar'),node('p',`${state.entries.length} invented class(es) currently saved. History survives restart; fresh access and approval are required.`));
+                for(const entry of state.entries)out.append(eventCard(entry.payload,'Saved test class'));
+                const names={INITIALISE:'Sandbox created',PREVIEW:'Preview prepared',APPROVAL:'Owner approval recorded',SUBMIT:'Approved action submitted',LOCAL_OUTCOME:'Local result recorded',RECONCILE:'Recorded attempt checked',REVOKE_APPROVAL:'Approval revoked'};
+                for(const record of history.journal.slice(-12))out.append(node('p',`${names[record.operation] || 'Local history recorded'} · ${record.recorded_at}`));
+                const advanced=node('details');advanced.append(node('summary','Advanced Details: Persistent TEST_ONLY local journal'),node('p',`Target version ${state.calendar_version}; ${history.staging_file_count} retained staging file(s). Integrity checked, not encrypted or externally signed.`),detail('Current local entries',state.entries),detail('Authorized owner/session',this.session));
+                for(const r of history.journal)advanced.append(detail(`${r.sequence} · ${r.operation} · ${r.recorded_at}`,r));
+                for(const p of history.approved_previews || [])advanced.append(detail(`Historical approved exact diff · ${p.preview_digest}`,{source_bindings:p.source_bindings,operations:p.operations}));
+                advanced.append(detail('Recorded outcomes and recovery state',history.outcomes));out.append(advanced);
                 const select=el('sandboxRecoveryApproval'),old=this.recoveryId || select.value;select.replaceChildren();
-                for(const a of [...history.approvals].reverse()){const o=node('option',`${a.approval_id} · ${a.revoked?'REVOKED':Date.parse(a.expires_at)<=Date.now()?'EXPIRED':'recorded'} · ${a.preview_digest}`);o.value=a.approval_id;select.append(o);}
+                for(const a of [...history.approvals].reverse()){const o=node('option',`${a.recorded_at} · ${a.revoked?'Revoked':Date.parse(a.expires_at)<=Date.now()?'Expired':'Recorded'}`);o.value=a.approval_id;select.append(o);}
                 if(history.approvals.some(a=>a.approval_id===old))select.value=old;
             };
             if(withAction)await this.action(work);else await work();

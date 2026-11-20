@@ -1,8 +1,9 @@
 """TAR UMT structured-source adapter, separate from B1/B2/B3/B4/P1.
 
 Capture/candidate UUIDs are local record IDs, never durable source-session IDs.
-No selective controller, constraint engine, human attestation or calendar writer
-is executed here. Unknown source-local values remain explicit.
+Field adaptation does not infer reliability or missing context. The API wrapper
+delegates structured review to the existing validation/routing layer. Unknown
+source-local values remain explicit; no calendar writer is called.
 """
 
 from hashlib import sha256
@@ -28,6 +29,12 @@ ADAPTER_CONFIGURATION = {
     "identity": "UNRESOLVED_UNTIL_SOURCE_AUTHORITY",
     "recurrence": "NO_INFERENCE_FROM_WEEK_VIEW",
 }
+LEGACY_CONFIGURATION_DIGEST = sha256(json.dumps(
+    ADAPTER_CONFIGURATION, sort_keys=True, separators=(",", ":")
+).encode("utf-8")).hexdigest()
+ADAPTER_CONFIGURATION = {**ADAPTER_CONFIGURATION,
+    'course_roles':'session-header-prefix-and-explicit-session-markers-v1',
+    'time_axis_headers':'non-session-evidence-v1'}
 CONFIGURATION_DIGEST = sha256(json.dumps(
     ADAPTER_CONFIGURATION, sort_keys=True, separators=(",", ":")
 ).encode("utf-8")).hexdigest()
@@ -47,7 +54,9 @@ def _source_fields(record: dict) -> tuple[dict, tuple[str, str] | None]:
     title = record["tooltip_title"]
     header = record["raw_header"]
     raw = {}
-    course = re.search(r"\b([A-Z]{2,}\d{3,})\b", visible, re.IGNORECASE)
+    marker = re.search(r"\((?:L|P|T|Lecture|Practical|Tutorial)\)",visible,re.I)
+    course_scope = visible[:marker.start()] if marker else visible
+    course = re.search(r"\b([A-Z]{2,}\d{3,})\b", course_scope, re.IGNORECASE)
     if course:
         raw["course_code"] = course.group(1)
     visible_type = re.search(r"\(([A-Za-z]+)\)", visible)
@@ -110,7 +119,16 @@ def _normalize(name: str, value: str, *, unattributed_title: bool = False):
 def _ambiguous_source_fields(record: dict) -> dict[str, tuple[str, ...]]:
     """Retain multiple possible values instead of choosing the first regex match."""
     visible = clean_space(record["visible_text"])
-    candidates = {"course_code": re.findall(r"\b[A-Z]{2,}\d{3,}\b", visible, re.IGNORECASE)}
+    code_pattern = r"\b[A-Z]{2,}\d{3,}\b"
+    marker = re.search(r"\((?:L|P|T|Lecture|Practical|Tutorial)\)",visible,re.I)
+    if marker:
+        # Course alternatives in the session header remain alternatives. Bare
+        # room-like identifiers in later venue/lecturer lines are not courses.
+        codes = re.findall(code_pattern,visible[:marker.start()],re.I)
+        codes += re.findall(r"\b([A-Z]{2,}\d{3,})\s*\((?:L|P|T|Lecture|Practical|Tutorial)\)",visible,re.I)
+    else:
+        codes = re.findall(code_pattern,visible,re.I)
+    candidates = {"course_code":codes}
     time_ranges = list(re.finditer(TIME_PATTERN, visible, re.IGNORECASE))
     if len(time_ranges) > 1:
         candidates["start_time"] = [match.group(1) for match in time_ranges]
@@ -157,6 +175,11 @@ def adapt_tarumt_response(parsed: dict) -> CanonicalTimetable:
             locator="semester strong / #fweek option[selected]",
             transformations=("select_semester_and_week_text",),
         ))
+    for index, structural in enumerate(parsed.get('_non_session_records',())):
+        evidence.append(EvidenceSpan(evidence_id=f'{capture_id}:structure:{index}',source_document_id=capture_id,
+            route='tarumt_html',raw_text=structural['raw_text'],raw_html=structural['raw_html'],
+            locator=f"weekly-table/tr[{structural['row_index']}] (time-axis header)",
+            transformations=('non_session:time_axis_header',)))
     for index, record in enumerate(records):
         prefix = f"{capture_id}:candidate:{index}"
         cell_id, header_id = f"{prefix}:cell", f"{prefix}:header"
@@ -241,5 +264,11 @@ def adapt_tarumt_response(parsed: dict) -> CanonicalTimetable:
 
 def canonical_api_data(parsed: dict) -> dict:
     """Add the contract while retaining the existing public metadata/events fields."""
-    return {**{key: value for key, value in parsed.items() if not key.startswith("_")},
-            "canonical": adapt_tarumt_response(parsed).model_dump(mode="json")}
+    packet = adapt_tarumt_response(parsed)
+    data = {**{key: value for key, value in parsed.items() if not key.startswith("_")},
+            "canonical": packet.model_dump(mode="json")}
+    if packet.source.route == 'tarumt_html':
+        from backend.review.structured import structured_application
+        data['application'] = structured_application(packet)
+        data['canonical'] = data['application']['current_packet']
+    return data

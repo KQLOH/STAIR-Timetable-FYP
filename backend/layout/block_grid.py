@@ -652,4 +652,6 @@ def assess_blocks(packet,supplement,envelope,mode='constrained'):
         expected['canonical_digest'],packet.model_dump_json(),graph.model_dump_json(),mode,PROFILE,c['status'],
         c['base_score_digest'],tuple(mapping.items()),tuple(e.model_dump_json() for e in events),
         tuple(e['candidate_id'] for e in c['unresolved_candidates']),tuple((gid,comp['status']) for comp in c['components'] for gid in comp['group_ids']),json.dumps(c['findings']))
-    return tuple(assess_event(run,e,findings) for e in events) or (assess_event(run,None,findings),)
+    from backend.review.source_routing import source_conflicts
+    conflicts=source_conflicts(graph)
+    return tuple(assess_event(run,e,findings,source_graph=graph,source_findings=conflicts) for e in events) or (assess_event(run,None,findings,source_graph=graph,source_findings=conflicts),)

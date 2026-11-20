@@ -19,6 +19,7 @@
             try {
                 const source = reviewSource().packet?.source;
                 if (!source || !state.upload?.file) throw Error('Upload the original file before requesting access.');
+                if(reviewController.session&&reviewController.transport&&reviewController.session.source_bindings?.some(([id,hash])=>id===source.source_document_id&&hash===source.content_sha256)){await reviewController.refreshQueue();if(reviewController.session){await reviewController.restoreSavedSource?.();status.textContent='Saved reviews are already connected for this source. Your checklist and unsaved entries are retained.';if(typeof scheduleCheckController!=='undefined')scheduleCheckController?.syncReviewState();return;}}
                 reviewController.forget();binding = '';connect.disabled = true;
                 const response = await fetch(origin + '/__local_review__/pending', {method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
                     headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source_document_id: source.source_document_id, content_sha256: source.content_sha256})});
@@ -38,7 +39,8 @@
                 status.textContent = 'The source changed. Request fresh access.';return;
             }
             const credential = binding;
-            reviewController.attachTrustedHostTransport(async (url, options = {}) => {
+            const alreadyConnected=!!reviewController.session&&!!reviewController.transport&&reviewController.session.source_bindings?.some(([id,hash])=>id===source.source_document_id&&hash===source.content_sha256);
+            if(!alreadyConnected)reviewController.attachTrustedHostTransport(async (url, options = {}) => {
                 const target = new URL(url), method = (options.method || 'GET').toUpperCase();
                 if (target.origin !== origin || !target.pathname.startsWith('/api/review/') || target.username || target.password || target.hash || target.href.includes('%') || !['GET', 'POST'].includes(method)) throw Error('Review transport refused.');
                 const headers = new Headers(options.headers || {});

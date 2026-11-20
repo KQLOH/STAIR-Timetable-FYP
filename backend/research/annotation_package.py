@@ -184,11 +184,11 @@ def apply_action(current, request):
         return flow.compare(current, Comparison.model_validate(p))
     if action == 'adjudicate':
         return flow.adjudicate(current, Adjudication.model_validate(p))
-    if action == 'verify-independent':
+    if action in {'verify-primary','verify-independent'}:
         return flow.verify_reference(current, PageInventory.model_validate(p['inventory']),
             tuple(tuple(x) for x in p['bindings']), Attestation.model_validate(p['recorded_by']),
             field_registry_artifact_id=p['field_registry_artifact_id'],
-            conditional_fields=tuple(p['conditional_fields']), independently_audited=True)
+            conditional_fields=tuple(p['conditional_fields']), independently_audited=action=='verify-independent')
     raise ValueError('UNSUPPORTED_ACTION')
 
 
@@ -262,7 +262,7 @@ def main(argv=None):
             workflows = tuple(PageWorkflow.model_validate(read(p)) for p in args.workflow)
             if len({w.page_id for w in workflows}) != len(workflows):
                 raise ValueError('DUPLICATE_EXPORT_PAGE')
-            if any(w.state != flow.WorkflowState.INDEPENDENTLY_VERIFIED for w in workflows):
+            if any(w.state not in {flow.WorkflowState.MANUALLY_VERIFIED_REFERENCE,flow.WorkflowState.INDEPENDENTLY_VERIFIED} for w in workflows):
                 raise ValueError('INDEPENDENT_VERIFICATION_REQUIRED')
             result = flow.export_gold_manifest(workflows)
         write_new(args.out, result)

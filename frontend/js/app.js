@@ -11,6 +11,7 @@ const state = {
     meta: null,
     upload: null,
     canonical: null,
+    intranet: null,
     reviewSnapshot: null,
     reviewStale: false,
 
@@ -28,7 +29,7 @@ const shellControls = typeof STAIRControls === "undefined" ? null : new STAIRCon
 let calendarViewport = null;
 
 const analysisController = typeof STAIRAnalysis === "undefined" ? null : new STAIRAnalysis.Controller({
-    base: API_BASE, getSource: () => ({upload:state.reviewStale || state.reviewSnapshot ? null : state.upload,
+    base: API_BASE, studentMode:true, getSource: () => ({upload:state.reviewStale || state.reviewSnapshot ? null : state.upload,
         canonical:state.reviewStale ? null : state.reviewSnapshot?.packet || state.canonical, sample:state.source === "sample"})
 });
 const reviewController = typeof STAIRReview === "undefined" ? null : new STAIRReview.Controller({
@@ -39,13 +40,14 @@ const reviewController = typeof STAIRReview === "undefined" ? null : new STAIRRe
     // No host transport or grant is installed by normal startup.
 });
 const studentEditor = typeof STAIRStudentReview === 'undefined' ? null : new STAIRStudentReview.Editor({review:reviewController,getSource:reviewSource,getUpload:()=>state.upload});
+const scheduleCheckController = typeof STAIRScheduleCheck === "undefined" ? null : new STAIRScheduleCheck.Controller({review:reviewController,getSource:reviewSource,getSnapshot:()=>state.reviewSnapshot,getUpload:()=>state.upload});
 const calendarSandboxController = typeof STAIRSandbox === "undefined" ? null : new STAIRSandbox.Controller({base:API_BASE});
 
 function reviewSource() {
     if (state.reviewSnapshot) return {packet:state.reviewSnapshot.packet,result:state.upload};
     const output=state.upload?.reconstruction?.canonical_output;
     const packet=output ? {...output.packet,events:[...output.packet.events,...output.unresolved_candidates]} : state.upload?.extraction || state.canonical;
-    return {packet,result:state.upload};
+    return {packet,result:state.upload || state.intranet};
 }
 
 function sameReviewCapture(source) {
@@ -59,6 +61,9 @@ function clearReviewSessionProjection() {
     if (state.upload) {
         state.events=STAIRUpload.displayedEvents(state.upload);
         STAIRUpload.renderEvidence(state.upload);
+    } else if (state.intranet) {
+        state.canonical=state.intranet.current_packet;
+        state.events=state.canonical.events.map(e=>STAIRUpload.eventView(e,'TAR UMT structured source'));
     } else if (state.source==="authorized_review") {
         clearUploadView();state.canonical=null;state.events=[];state.source=null;state.meta=null;
         document.getElementById("documentPreview")?.replaceChildren();
@@ -95,7 +100,7 @@ function applyReviewSnapshot(snapshot) {
         if (preview) {const note=document.createElement("p");note.textContent="This authorized review capture has no local source-image preview. Inspect its source-linked text, page and coordinates in candidate details.";preview.append(note);}
         setText("documentName","Saved timetable");setText("documentMeta","Reselect the original file to inspect image crops");
     }
-    const automatic=state.upload?STAIRUpload.displayedEvents(state.upload):null;
+    const automatic=state.upload?STAIRUpload.displayedEvents(state.upload):state.intranet?state.intranet.current_packet.events.map(e=>STAIRUpload.eventView(e,'TAR UMT structured source')):null;
     if(automatic && !snapshot.packet.events.some(event=>STAIRUpload.eventIdentity(event) && automatic.some(view=>STAIRUpload.eventIdentity(view.canonical)===STAIRUpload.eventIdentity(event))))return false;
     sourceGeneration++;state.reviewSnapshot=snapshot;state.reviewStale=false;state.meta=null;
     state.events=automatic?STAIRUpload.mergeSavedViews(automatic,snapshot):snapshot.packet.events.map(event=>({...STAIRUpload.eventView(event,STAIRUpload.sourceLabel(snapshot.packet.source)),methodLabel:event.revision.method_id,reviewTask:snapshot.tasks.find(t=>t.current_event?.revision.revision_id===event.revision.revision_id),savedReview:true}));
@@ -155,6 +160,7 @@ document.addEventListener(
 
         setupSourceButtons();
         setupReaderSelection();
+        setupCopiedText();
 
         setupReviewControls();
         document.getElementById('reconnectSavedReviews')?.addEventListener('click',async()=>{
@@ -165,6 +171,8 @@ document.addEventListener(
         document.addEventListener('stair-edit-class',event=>studentEditor?.open(event.detail.candidateId));
 
         setupCalendarControls();
+        scheduleCheckController?.setup();
+        document.getElementById("analysisResearch")?.addEventListener("toggle",()=>{if(document.getElementById("analysisResearch").open)scheduleCheckController?.activate();});
         document.getElementById("analyzeSchedule")?.addEventListener("click", () => analysisController.run());
         for (const id of ["analysisStart", "analysisEnd", "analysisZone", "analysisScope", "analysisCohort"]) {
             document.getElementById(id)?.addEventListener("input", () => analysisController?.invalidate(null, true));
@@ -312,6 +320,7 @@ function showView(viewName) {
     }
 
 
+    if (viewName === "analysis") { analysisController?.run(); if(document.getElementById("analysisResearch")?.open)scheduleCheckController?.activate(); }
     if (viewName === "calendar") {
         renderCalendar();
     }
@@ -664,6 +673,8 @@ async function connectLiveIntranet(
     }
 
     const generation = ++sourceGeneration;
+    let pendingToken = null;
+    passwordInput.value = "";
 
 
     if (errorBox) {
@@ -702,6 +713,9 @@ async function connectLiveIntranet(
                 `${API_BASE}/api/intranet/connect`,
                 {
                     method: "POST",
+                    credentials: "omit",
+                    cache: "no-store",
+                    redirect: "error",
 
                     headers: {
                         "Content-Type":
@@ -721,8 +735,11 @@ async function connectLiveIntranet(
             );
 
 
-        const payload =
-            await response.json();
+        let payload;
+        try { payload = await response.json(); }
+        catch (_) { throw new Error("Invalid TAR UMT response. Your previous timetable has been retained."); }
+
+        pendingToken = response.ok && payload.success ? payload.connection_token : null;
 
         if (generation !== sourceGeneration) {
             if (response.ok && payload.success && payload.connection_token) {
@@ -735,9 +752,24 @@ async function connectLiveIntranet(
         if (!response.ok) {
 
             throw new Error(
-                payload.detail
-                ||
-                "Unable to connect to TAR UMT."
+                response.status === 401 ? "TAR UMT could not confirm your sign-in. Check your credentials and institutional access." :
+                `Unable to connect to TAR UMT (HTTP ${response.status}).` + (response.status === 502 ? ({
+                    __proto__: null,
+                    LOGIN_PAGE: " The official sign-in page could not be opened.",
+                    LOGIN_SUBMISSION: " The institutional sign-in submission or redirect was refused.",
+                    LOGIN_CONFIRMATION: " The institutional session could not be confirmed.",
+                    SESSION_PAGE: " The timetable session page could not be opened.",
+                    SESSION_NAVIGATION: " No supported timetable navigation was found in the returned session page.",
+                    TIMETABLE_FETCH: " The timetable request or redirect could not complete.",
+                    TIMETABLE_CONTENT: " The returned page could not be confirmed as a timetable."
+                }[payload.stage] || "") + ({
+                    __proto__: null,
+                    HTTPS_REQUIRED: " A non-HTTPS destination was blocked.",
+                    ORIGIN_NOT_ALLOWED: " A destination outside the approved institutional origin was blocked.",
+                    INVALID_TARGET: " The destination address was invalid.",
+                    REDIRECT_MISSING: " The portal returned a redirect without a destination.",
+                    REDIRECT_LIMIT: " The portal redirected repeatedly; the connection was stopped."
+                }[payload.reason] || "") : "")
             );
 
         }
@@ -765,7 +797,9 @@ async function connectLiveIntranet(
         // Save STAIR session information
         // ---------------------------------------------
 
+        if (typeof pendingToken !== "string" || !pendingToken) throw new Error("TAR UMT did not confirm a session.");
         STAIRIntranet.structuredPacket(payload.data);
+        const mappedEvents = payload.data.events.map(normaliseIntranetEvent);
         const previousToken = state.connectionToken;
         state.connectionToken =
             payload.connection_token;
@@ -793,23 +827,12 @@ async function connectLiveIntranet(
         state.source = "tarumt_intranet_live";
         state.canonical = data.canonical || null;
         if (previousToken && previousToken !== state.connectionToken) {
-            try { await STAIRIntranet.sessionRequest(API_BASE, "/api/intranet/disconnect", previousToken); } catch (_) { /* Local session cleanup is best effort. */ }
-            if (generation !== sourceGeneration) return;
+            STAIRIntranet.sessionRequest(API_BASE, "/api/intranet/disconnect", previousToken).catch(() => {});
         }
         updateSessionControls();
-        state.events =
-            data.events.map(
-                (
-                    timetableEvent,
-                    index
-                ) =>
-
-                    normaliseIntranetEvent(
-                        timetableEvent,
-                        index
-                    )
-            );
-
+        state.intranet = data.application || null;
+        state.events = state.intranet ? state.canonical.events.map(e=>STAIRUpload.eventView(e,'TAR UMT structured source')) : mappedEvents;
+        pendingToken = null; // Adopt only after the structured result has been validated.
 
         state.meta = {
 
@@ -861,6 +884,9 @@ async function connectLiveIntranet(
     }
 
     catch (error) {
+        if (pendingToken && pendingToken !== state.connectionToken) {
+            try { await STAIRIntranet.sessionRequest(API_BASE, "/api/intranet/disconnect", pendingToken); } catch (_) { /* No private response is logged. */ }
+        }
 
 
         if (generation === sourceGeneration) showIntranetLoginError(
@@ -1081,11 +1107,24 @@ function setupReaderSelection() {
     describe();
 }
 
+function setupCopiedText() {
+    const button=document.getElementById('extractCopiedText');
+    button?.addEventListener('click',async()=>{
+        try {
+            const file=STAIRUpload.copiedTextFile(document.getElementById('copiedTimetableText').value);
+            button.disabled=true;setText('copiedTextFeedback','Reading your pasted timetable...');
+            const result=await previewUploadedFile(file);
+            setText('copiedTextFeedback',result?.sourceText!==undefined && !result.replacementError && result.stages.extraction!=='FAILED' ? 'Pasted timetable read. Review every class against your original.' : 'The pasted timetable could not be read. Your text and previous timetable are retained.');
+        } catch(error) {setText('copiedTextFeedback',error.message);}
+        finally {button.disabled=false;}
+    });
+}
+
 function previewUploadedFile(file) {
     sourceGeneration++;
     showView("review");
     const reader=document.getElementById('timetableReader');
-    const {pipeline,...options}=STAIRUpload.readerConfiguration(!reader?.value || document.getElementById('useAdvancedReader')?.checked ? 'advanced' : reader.value, {
+    const {pipeline,...options}=STAIRUpload.readerConfiguration(file.name.toLowerCase().endsWith('.txt') ? 'general' : !reader?.value || document.getElementById('useAdvancedReader')?.checked ? 'advanced' : reader.value, {
         pipeline:document.getElementById('extractionPipeline')?.value || 'evidence',
         reconstruct:document.getElementById('runP1')?.checked !== false,
         layout:document.getElementById('runLayoutAssociation')?.checked === true,
@@ -1106,7 +1145,7 @@ function previewUploadedFile(file) {
 }
 
 function clearUploadView() {
-    state.reviewSnapshot=null;state.reviewStale=false;
+    state.reviewSnapshot=null;state.reviewStale=false;state.intranet=null;
     uploadController.reset({notify:false}); state.upload = null;
     document.getElementById("extractionEvidence")?.replaceChildren();
     const preview = document.getElementById("documentPreview");
@@ -1140,7 +1179,8 @@ async function refreshIntranet() {
         clearUploadView();
         state.source = "tarumt_intranet_live";
         state.canonical = payload.data.canonical || null;
-        state.events = payload.data.events.map(normaliseIntranetEvent);
+        state.intranet = payload.data.application || null;
+        state.events = state.intranet ? state.canonical.events.map(e=>STAIRUpload.eventView(e,'TAR UMT structured source')) : payload.data.events.map(normaliseIntranetEvent);
         state.meta = {semester:payload.data.semester, week:payload.data.week, weekStart:payload.data.week_start, weekEnd:payload.data.week_end};
         updateIntranetPreview(); renderEverything();
         setText("processingStatus", "Structured source refreshed — M5 NOT ASSESSED; calendar BLOCKED.");
@@ -1580,7 +1620,13 @@ function renderReview() {
     }
     if (state.upload) {
         const display=state.reviewSnapshot || state.reviewStale ? {...state.upload,reviewEvidence:state.reviewStale?[]:state.reviewSnapshot.packet.evidence,policy:state.reviewStale?[]:state.reviewSnapshot.tasks.map(t=>t.decision)} : state.upload;
+        STAIRUpload.renderRoutingSummary(state.events,display);
         STAIRUpload.renderCards(getVisibleEvents(), display, container);
+        return;
+    }
+    if (state.intranet && !state.reviewSnapshot) {
+        STAIRUpload.renderRoutingSummary(state.events,state.intranet);
+        STAIRUpload.renderCards(getVisibleEvents(),{...state.intranet,extraction:state.canonical},container);
         return;
     }
     if (state.reviewSnapshot) {

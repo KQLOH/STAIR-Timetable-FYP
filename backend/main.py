@@ -3,6 +3,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi import HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 
 from fastapi.middleware.cors import (
@@ -62,6 +65,16 @@ app.include_router(review_router)
 app.include_router(calendar_router)
 app.include_router(layout_router)
 app.include_router(analysis_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def redact_institutional_validation_error(request: Request, error: RequestValidationError):
+    # FastAPI's default input-bearing errors must never echo login credentials
+    # or institutional connection material, including nested malformed values.
+    if request.url.path.startswith('/api/intranet/'):
+        return JSONResponse(status_code=422, content={'detail': 'Invalid institutional timetable request.'})
+    return await request_validation_exception_handler(request, error)
+
 
 
 app.add_middleware(
@@ -214,6 +227,7 @@ def connect_tarumt(
 ):
 
     client = TARUMTClient()
+    stage = "LOGIN_PAGE"
 
     try:
 
@@ -230,6 +244,7 @@ def connect_tarumt(
         # Fetch live latest timetable
         # ---------------------------------------------
 
+        stage = "TIMETABLE_FETCH"
         html_content = (
             client
             .fetch_latest_timetable_html()
@@ -286,12 +301,32 @@ def connect_tarumt(
 
     except TARUMTNavigationError as error:
 
+        # Fixed local labels only; never expose exception text, URL parameters,
+        # response bodies, cookies or credentials in diagnostics.
+        reported = getattr(client, "stage", None)
+        allowed = {"LOGIN_PAGE", "LOGIN_SUBMISSION", "LOGIN_CONFIRMATION", "SESSION_PAGE",
+                   "SESSION_NAVIGATION", "TIMETABLE_FETCH", "TIMETABLE_CONTENT"}
+        stage = reported if isinstance(reported, str) and reported in allowed else stage
+        reason = getattr(error, 'reason', None)
+        reasons = {'HTTPS_REQUIRED', 'ORIGIN_NOT_ALLOWED', 'INVALID_TARGET', 'REDIRECT_MISSING', 'REDIRECT_LIMIT'}
+        reason = reason if isinstance(reason, str) and reason in reasons else 'NAVIGATION_UNCONFIRMED'
+        # Only structural enum labels leave the process, never addresses/values.
+        labels = {
+            'step': {'FORM_ACTION_RESOLUTION', 'FORM_ACTION_VALIDATION', 'REQUEST_DESTINATION_VALIDATION', 'RESPONSE_DESTINATION_VALIDATION', 'REDIRECT_RESOLUTION', 'REDIRECT_VALIDATION'},
+            'category': {'MALFORMED_URL', 'CONTROL_CHARACTER', 'USERINFO', 'LEADING_SPACE', 'INSECURE_SCHEME', 'UNTRUSTED_ORIGIN'},
+            'form': {'ABSOLUTE', 'RELATIVE', 'PROTOCOL_RELATIVE', 'QUERY_ONLY', 'FRAGMENT_ONLY'},
+        }
+        diagnostic = {}
+        for name, values in labels.items():
+            value = getattr(error, name, None)
+            diagnostic[name] = value if isinstance(value, str) and value in values else 'UNCLASSIFIED'
         client.close()
-
-        raise HTTPException(
-            status_code=502,
-            detail="TAR UMT timetable retrieval failed. Please retry explicitly."
-        )
+        return JSONResponse(status_code=502, content={
+            "detail": "TAR UMT connection could not complete. Please retry explicitly.",
+            "stage": stage,
+            "reason": reason,
+            "diagnostic": diagnostic,
+        }, headers={"Cache-Control": "no-store"})
 
     except Exception as error:
 
