@@ -1,3 +1,5 @@
+> Historical publication plan for the first supervisor checkpoint. For the current system-update checkout and verification limits, use the [README](../README.md) and [setup guide](setup.md).
+
 # Supervisor review and safe publication
 
 The current system is prepared locally. **Commit, push, merge and force-push require the owner's confirmation.** This document does not execute or authorize those actions.

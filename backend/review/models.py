@@ -5,7 +5,7 @@ import json
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator, model_serializer
 from backend.models.evidence import ContractModel, BoundingBox
 from backend.models.event import (CanonicalEvent, DecisionStatus, FieldState, CandidateAlternative,
                                   EventContent)
@@ -37,6 +37,21 @@ class FieldAssessment(ContractModel):
     parser_confidence: float | None = Field(default=None,ge=0,le=1)
 
 
+class SourceRouting(ContractModel):
+    profile: Literal['m5-source-review-v1'] = 'm5-source-review-v1'
+    configuration_digest: str
+    route: Literal['REVIEW','ABSTAIN']
+    support: Literal['SOURCE_SUPPORTED','NEEDS_CHECK','INSUFFICIENT']
+    revision_id: UUID | None
+    revision_digest: str | None
+    reason_codes: tuple[str, ...]
+    fields_to_check: tuple[str, ...]
+    evidence_ids: tuple[str, ...]
+    explanations: tuple[dict[str,str], ...]
+    registered_accept_eligible: Literal[False] = False
+    calibrated_probability: None = None
+
+
 class PolicyAssessment(ContractModel):
     decision_id: UUID = Field(default_factory=uuid4)
     candidate_id: str | None
@@ -57,13 +72,52 @@ class PolicyAssessment(ContractModel):
     findings: tuple[Finding, ...]
     fields: tuple[FieldAssessment, ...]
     search_status: str
-    score_provenance: Literal['M4_PROVISIONAL_SUPPORT_ONLY','NO_SCORABLE_OUTPUT','M4_SCORE_NOT_REUSED_AFTER_CORRECTION']
+    score_provenance: Literal['M4_PROVISIONAL_SUPPORT_ONLY','NO_SCORABLE_OUTPUT','M4_SCORE_NOT_REUSED_AFTER_CORRECTION','STRUCTURED_SOURCE_NO_PROBABILITY','REGISTERED_FROZEN_RANKING']
     base_score_digest: str | None
     calibrated_probability: None = None
-    registered_routing_eligible: Literal[False] = False
+    registered_routing_eligible: bool = False
+    registration_mode: Literal['TEST_ONLY','AUTHENTIC'] | None = None
+    registration_id: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+    registration_source_digest: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+    registration_evidence_digest: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+    registration_signature: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+    ranking_score: float | None = Field(default=None,ge=0,le=1,allow_inf_nan=False)
     review_required: bool
     recorded_at: AwareDatetime
     schedule_verified: Literal[False] = False
+    source_routing: SourceRouting | None = None
+
+
+    @model_validator(mode='after')
+    def registration_claim(self):
+        if self.registered_routing_eligible or self.registration_mode is not None:
+            if not (self.policy_profile=='m5-registered-v1' and self.registration_mode and
+                    self.registration_id and self.registration_source_digest and
+                    self.registration_evidence_digest and self.registration_signature):
+                raise ValueError('Registered claims require a host-issued receipt')
+        if self.registered_routing_eligible and self.decision!=DecisionStatus.ACCEPT:
+            raise ValueError('Only ACCEPT can claim registered eligibility')
+        return self
+
+    @model_serializer(mode='wrap')
+    def preserve_development_records(self,handler):
+        value=handler(self)
+        # Existing encrypted journal digests must retain their exact contract.
+        if self.registration_mode is None:
+            for key in ('registration_mode','registration_id','registration_source_digest',
+                        'registration_evidence_digest','registration_signature','ranking_score'):
+                value.pop(key,None)
+        return value
+
+
+class RegisteredAssessmentRef(ContractModel):
+    decision_id: UUID
+    candidate_id: str
+    event_id: UUID
+    revision_id: UUID
+    revision_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    registration_id: str = Field(pattern=r'^[0-9a-f]{64}$')
+    registration_signature: str = Field(pattern=r'^[0-9a-f]{64}$')
 
 
 class ReviewState(str, Enum):

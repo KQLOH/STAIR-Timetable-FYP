@@ -78,13 +78,13 @@
           </svg><span>Workspace</span></button>
         <button class="nav-item" data-view="upload"><svg>
             <use href="#i-upload" />
-          </svg><span>New extraction</span></button>
+          </svg><span>Upload timetable</span></button>
         <button class="nav-item" data-view="review"><svg>
             <use href="#i-review" />
-          </svg><span>Review events</span><b id="reviewNavCount">0</b></button>
+          </svg><span>Review classes</span><b id="reviewNavCount">0</b></button>
         <button class="nav-item" data-view="calendar"><svg>
             <use href="#i-calendar" />
-          </svg><span>Calendar</span></button>
+          </svg><span>Calendar preview</span></button>
         <button class="nav-item" data-view="analysis"><svg><use href="#i-spark" /></svg><span>Schedule Analysis</span></button>
         <button class="nav-item" data-view="history"><svg>
             <use href="#i-history" />
@@ -121,8 +121,8 @@
         <div class="welcome-row">
           <div>
             <p class="eyebrow">Structured timetable extraction</p>
-            <h2>Inspect timetable event candidates.</h2>
-            <p>Upload PNG, JPG or PDF. This development display does not establish M5 acceptance or calendar approval.</p>
+            <h2>Your timetable, ready to review.</h2>
+            <p>Upload a timetable, check your classes and explore a calendar preview.</p>
           </div>
           <button class="button primary large" id="workspaceUpload"><svg>
               <use href="#i-upload" />
@@ -131,9 +131,9 @@
 
         <div class="metric-strip" aria-label="Workspace summary">
           <div><span>Detected events</span><strong id="metricDetected">—</strong><small>from current file</small></div>
-          <div><span>Complete candidates</span><strong id="metricReady">—</strong><small>Field presence only; not eligible</small></div>
-          <div><span>Incomplete candidates</span><strong id="metricReview">—</strong><small>Not a calibrated policy count</small></div>
-          <div><span>Calibrated confidence</span><strong id="metricConfidence">—</strong><small>Unavailable; OCR scores are separate</small>
+          <div><span>Details found</span><strong id="metricReady">—</strong><small>Check against your original timetable</small></div>
+          <div><span>Needs attention</span><strong id="metricReview">—</strong><small>Some details need your review</small></div>
+          <div><span>Calendar connection</span><strong id="metricConfidence">—</strong><small>Preview available; synchronization unavailable</small>
           </div>
         </div>
 
@@ -147,16 +147,16 @@
             </div>
             <ol class="pipeline" id="pipeline">
               <li data-step="ingest"><span>1</span>
-                <div><strong>Ingest document</strong><small>PDF, PNG or JPG</small></div><i></i>
+                <div><strong>Upload timetable</strong><small>PDF, PNG or JPG</small></div><i></i>
               </li>
               <li data-step="extract"><span>2</span>
-                <div><strong>Read text & layout</strong><small>OCR and spatial cues</small></div><i></i>
+                <div><strong>Read text & layout</strong><small>Read the text and layout</small></div><i></i>
               </li>
               <li data-step="decode"><span>3</span>
-                <div><strong>Reconstruct events</strong><small>Candidate graph + constraints</small></div><i></i>
+                <div><strong>Reconstruct events</strong><small>Match courses, days and times</small></div><i></i>
               </li>
               <li data-step="review"><span>4</span>
-                <div><strong>Inspect policy</strong><small>Development REVIEW / ABSTAIN; ACCEPT disabled</small></div><i></i>
+                <div><strong>Review classes</strong><small>Check uncertain details before planning</small></div><i></i>
               </li>
             </ol>
           </section>
@@ -225,24 +225,45 @@
       </section>
 
       <section class="view" id="view-analysis">
-        <div class="section-intro"><div><p class="eyebrow">M7 · DEVELOPMENT</p><h2>Schedule Analysis</h2>
-          <p>Observed canonical candidates only. Empty intervals do not establish availability.</p></div></div>
+        <div class="section-intro"><div><p class="eyebrow">Your workload</p><h2>Analyze My Schedule</h2>
+          <p>See your detected class hours, busy days and possible overlaps. No reviewer or sign-in is needed for this summary.</p></div></div>
         <div class="analysis-controls">
-          <label>Start date <input type="date" id="analysisStart" required></label>
-          <label>End date <input type="date" id="analysisEnd" required></label>
-          <label>Analysis IANA timezone <input id="analysisZone" placeholder="Explicit timezone" required></label>
-          <label>Declared timetable scope <input id="analysisScope" placeholder="Timetable identifier" required></label>
-          <label>Cohort (if evidenced) <input id="analysisCohort" placeholder="Optional cohort identifier"></label>
-          <button class="button primary" id="analyzeSchedule" type="button">Analyze observed events</button>
+          <button class="button primary" id="analyzeSchedule" type="button">Analyze my classes</button>
+          <details id="analysisOptions"><summary>Dates and local time (optional)</summary>
+            <p>Leave dates empty to count all detected class slots. Known dates and source timezone are filled when supported. Unknown weeks are never expanded.</p>
+            <label>From <input type="date" id="analysisStart"></label>
+            <label>Through <input type="date" id="analysisEnd"></label>
+            <label>Source timezone, if known <input id="analysisZone" placeholder="Leave blank if unknown"></label>
+          </details>
         </div>
-        <div id="analysisResult" class="analysis-result" aria-live="polite">NOT ASSESSED — select a canonical source and explicit scope.</div>
+        <div id="analysisResult" class="analysis-result" aria-live="polite">Upload a timetable or paste its text to see your observed workload.</div>
+        <details id="analysisResearch" class="card schedule-check-section">
+          <summary>Advanced / Research Verification (optional)</summary>
+          <p>This separate workflow checks schedule completeness for verified study windows. You do not need it to view the workload summary above. Existing checks and drafts remain saved.</p>
+          <details><summary>Advanced scope details</summary>
+            <label>Timetable identifier <input id="analysisScope" placeholder="Timetable identifier"></label>
+            <label>Class group (if shown) <input id="analysisCohort" placeholder="Leave blank if unknown"></label>
+          </details>
+        <section class="card schedule-check-section" aria-labelledby="wholeScheduleTitle">
+          <h3 id="wholeScheduleTitle">Whole-source research check</h3>
+          <p>Inspect every page of the original, including classes the reader may have missed. Your check is saved separately from independent verification. Editing a class invalidates an older check.</p>
+          <button type="button" class="button secondary" id="scheduleSource">View original</button>
+          <button type="button" class="button secondary" id="scheduleStart">Start whole-timetable check</button>
+          <button type="button" class="button secondary" id="scheduleRestore">Reopen saved check</button>
+          <p id="scheduleCheckStatus" aria-live="polite">Optional: reconnect editing access to inspect a saved source check. Observed workload above does not require this.</p>
+          <div class="schedule-source-grid"><div id="scheduleOriginal"></div><div id="scheduleCheckBody"></div></div>
+          <div class="analysis-controls"><label>Your availability starts <input type="datetime-local" id="studyStart"></label><label>Ends <input type="datetime-local" id="studyEnd"></label></div>
+          <button type="button" class="button secondary" id="scheduleAnalyze">Analyze checked schedule</button>
+          <div id="verifiedAnalysisResult" class="analysis-result" aria-live="polite"></div>
+        </section>
+        </details>
       </section>
 
       <section class="view" id="view-upload">
         <div class="section-intro">
           <p class="eyebrow">Step 1 of 3</p>
           <h2>Add your timetable</h2>
-          <p>Upload PNG, JPG or PDF to the local backend. OCR and reconstruction may remain incomplete.
+          <p>Upload PNG, JPG or PDF, or paste copied timetable text. Check the extracted classes against your original.
           </p>
         </div>
         <div class="upload-layout">
@@ -253,14 +274,23 @@
             <h3>Drop your timetable here</h3>
             <p>or choose a file from your computer</p>
             <button class="button primary" id="browseButton">Choose file</button>
-            <small>PDF, PNG, JPG/JPEG · max 20 MiB</small>
+            <small>PDF, PNG, JPG/JPEG · max 20 MiB; saved text · max 128 KiB</small>
           </section>
           <aside class="upload-tips">
             <h3>Read your timetable</h3>
-            <p>For a colored weekly grid, use the recommended block reader.</p>
-            <label><input id="runBlockGridS2b" type="checkbox"> RT2 Block OCR · Recommended</label>
-            <label><input id="runContextCorrection" type="checkbox" checked> Context-aware OCR correction (RT4, with Block OCR)</label>
-            <details class="extraction-advanced"><summary>Advanced extraction settings</summary>
+            <p>Choose the reader that best matches your timetable, then upload your file.</p>
+            <label for="timetableReader">Timetable type</label>
+            <select id="timetableReader" aria-describedby="readerHint">
+              <option value="general" selected>Standard image or PDF</option>
+              <option value="colored">Colored timetable</option>
+              <option value="grid">Grid timetable</option>
+            </select>
+            <p id="readerHint" role="status">For text lists and standard PDFs. PDFs with selectable text keep their original text.</p>
+            <details class="extraction-advanced" id="readerAdvanced"><summary>Advanced Details: extraction settings</summary>
+            <label><input id="useAdvancedReader" type="checkbox"> Use the advanced settings below instead of the timetable type above</label>
+            <label><input id="automaticReader" type="checkbox"> Experimental automatic reader (advanced mode only)</label>
+            <label><input id="runBlockGridS2b" type="checkbox"> Use colored-block reader (S2b)</label>
+            <label><input id="runContextCorrection" type="checkbox" checked> Context-aware OCR correction (RT4)</label>
             <label for="extractionPipeline">Extraction pipeline</label>
             <select id="extractionPipeline">
               <option value="evidence">evidence — evidence only</option>
@@ -272,7 +302,7 @@
             <label><input id="runP1" type="checkbox" checked> Run constrained P1 development reconstruction</label>
             <label><input id="runLayoutAssociation" type="checkbox" checked> OCR layout association — ocr-layout-m52-v1 (provisional)</label>
             <label><input id="runRuledGridS2a" type="checkbox"> Opt in: word OCR + ruled grid — ocr-ruled-grid-s2a-v1 (application only; evidence pipeline)</label>
-            <p>Select RT2 block OCR above for colored weekly grids, then upload or retry the file. M5.2 alone uses whole-image OCR. Uncheck layout options to retain the original m4-development-v1 comparison path. Layout links and partial fields do not grant verification or calendar approval.</p>
+            <p>The timetable type above controls normal uploads. Enable the advanced override to use these settings. Block and grid readers require the evidence pipeline; baseline pipelines use their own OCR without supplementary layout profiles. Only one supplementary reader can run at a time. Changing a reader affects the next upload or explicit retry, not saved corrections.</p>
             </details>
             <p class="eyebrow">For better results</p>
             <h3>A clean source helps</h3>
@@ -287,7 +317,7 @@
                     readable.</small></span></li>
               <li><svg>
                   <use href="#i-check" />
-                </svg><span><strong>Review source evidence</strong><small>M5 ACCEPT is disabled. Calendar writes remain blocked.</small></span></li>
+                </svg><span><strong>Check the original</strong><small>Review mistakes before using the preview. Calendar sync is unavailable.</small></span></li>
             </ul>
             <button class="text-button" id="loadSampleUpload">No file? Try the sample timetable</button>
             <br><br>
@@ -297,6 +327,14 @@
             </button>
           </aside>
         </div>
+        <section class="panel copied-text-input" aria-labelledby="copiedTextTitle">
+          <h3 id="copiedTextTitle">Or paste your timetable</h3>
+          <p>Copy class details with their days, dates and times. Keep each class on its own line or separate classes with a blank line. Copied text loses the original page layout, so check the results carefully.</p>
+          <label for="copiedTimetableText">Timetable text</label>
+          <textarea id="copiedTimetableText" rows="6" maxlength="131072" placeholder="Paste timetable text here" aria-describedby="copiedTextFeedback"></textarea>
+          <button id="extractCopiedText" type="button" class="button primary">Read pasted timetable</button>
+          <p id="copiedTextFeedback" role="status" aria-live="polite">Your pasted text stays here while you review the extracted classes.</p>
+        </section>
       </section>
 
       <section class="view" id="view-review">
@@ -306,20 +344,25 @@
             <h2>Review your timetable</h2>
             <p id="reviewSubtitle">Upload a timetable to begin.</p>
           </div>
-          <div class="review-actions"><button class="button secondary" id="exportJson"><svg>
+          <div class="review-actions"><details class="extraction-advanced"><summary>Advanced Details</summary><button class="button secondary" id="exportJson"><svg>
                 <use href="#i-download" />
-              </svg>Export JSON</button><button class="button primary" id="reviewToCalendar">Calendar preview<svg>
+              </svg>Export JSON</button></details><button class="button primary" id="reviewToCalendar">Calendar preview<svg>
                 <use href="#i-chevron" />
               </svg></button></div>
         </div>
 
         <div class="review-summary" aria-label="Timetable extraction summary">
           <div><span>Classes found</span><strong id="reviewFound">0</strong></div>
-          <div><span>Field-complete</span><strong id="reviewComplete">0</strong></div>
+          <div><span>Details found</span><strong id="reviewComplete">0</strong></div>
           <div><span>Needs review</span><strong id="reviewNeedsReview">0</strong></div>
-          <div><span>Verified records</span><strong id="reviewVerified">0</strong></div>
+          <div><span>Independently verified</span><strong id="reviewVerified">0</strong></div>
         </div>
-        <p class="review-notice">Extracted information still needs your attention. Field completeness is not verification. Calendar sync is unavailable.</p>
+        <p class="review-notice">Check your classes against the original timetable. You can save corrections with editing access. Calendar sync is unavailable.</p>
+        <p id="sourceRoutingSummary" class="review-notice" role="status" aria-live="polite">Source-review routing is not assessed. Registered ACCEPT is unavailable.</p>
+        <section class="review-notice" aria-label="Saved review connection">
+          <p id="savedReviewStatus" role="status" aria-live="polite">Automatically extracted details are shown. Saved corrections are private; reconnect saved reviews to load them.</p>
+          <button id="reconnectSavedReviews" class="button secondary" type="button">Reconnect saved reviews</button>
+        </section>
         <div class="review-layout empty-state-layout" id="reviewLayout">
           <section class="document-pane">
             <div class="pane-heading">
@@ -354,7 +397,7 @@
           <section class="events-pane">
             <div class="filter-row">
               <div class="segmented" id="eventFilters"><button class="active" data-filter="all" aria-pressed="true">All classes <span
-                    id="filterAll">0</span></button><button data-filter="accepted" aria-pressed="false">Field-complete <span
+                    id="filterAll">0</span></button><button data-filter="accepted" aria-pressed="false">Details found <span
                     id="filterReady">0</span></button><button data-filter="review" aria-pressed="false">Needs review <span
                     id="filterReview">0</span></button></div>
               <label class="search-box"><svg>
@@ -402,6 +445,8 @@
               <use href="#i-shield" />
             </svg>Preview only</span>
         </div>
+        <p class="review-notice">Try calendar changes with invented data in a separate local sandbox. Your timetable stays here. <a href="http://127.0.0.1:8022" target="_blank" rel="noopener noreferrer">Open local calendar sandbox</a>. Start it with the supported launcher described in the README.</p>
+        <details class="calendar-limitations"><summary>Advanced Details: calendar test sandbox</summary>
         <section class="panel sandbox-workflow" aria-labelledby="sandboxWorkflowTitle" id="sandboxWorkflow">
           <p class="eyebrow">TEST_ONLY · local synthetic calendar</p>
           <h3 id="sandboxWorkflowTitle">Calendar sandbox workflow</h3>
@@ -436,11 +481,13 @@
           </div>
           <div id="sandboxHistory" aria-label="Persistent TEST_ONLY calendar journal"></div>
         </section>
+        </details>
+        <p id="studentCalendarWarnings" role="status" class="review-notice"></p>
         <div class="calendar-layout">
           <section class="calendar-board">
             <div class="week-heading"><button class="icon-button" id="previousWeek" disabled aria-describedby="calendarScopeNote"
                 aria-label="Previous week">‹</button>
-              <div><strong>Dated candidate display — completeness unverified</strong><small id="calendarRange" role="status" tabindex="-1">No dated source scope loaded</small></div>
+              <div><strong>Your timetable preview</strong><small id="calendarRange" role="status" tabindex="-1">No dated source scope loaded</small></div>
               <button class="icon-button" id="nextWeek" aria-label="Next week" disabled aria-describedby="calendarScopeNote">›</button>
             </div>
             <p id="calendarScopeNote" class="calendar-scope-note">Week navigation is limited to dates in the loaded source. No recurring classes are inferred.</p>
@@ -448,8 +495,9 @@
             <div class="week-grid" id="weekGrid" role="region" aria-label="Dated candidate week; scroll horizontally to inspect all days" tabindex="0"></div>
           </section>
           <aside class="sync-panel">
-            <p class="eyebrow">Pre-commit check</p>
-            <h3>Backend authorization unavailable</h3>
+            <p class="eyebrow">Calendar connection</p>
+            <h3>Synchronization unavailable</h3>
+            <p>Your timetable is a preview. A supported calendar connection and separate approval are required before synchronization.</p>
             <div class="sync-count"><strong id="syncReadyCount">0</strong><span>authorized writes (blocked)</span></div>
             <dl>
               <div>
@@ -498,7 +546,7 @@
   </div>
 
   <input id="fileInput" type="file" hidden
-    accept=".pdf,.png,.jpg,.jpeg">
+    accept=".pdf,.png,.jpg,.jpeg,.txt">
 
   <div class="loading-overlay" id="loadingOverlay" aria-live="polite" aria-hidden="true">
     <div class="loader-card">
@@ -565,7 +613,20 @@
   </aside>
   <div class="drawer-backdrop" id="reviewBackdrop" aria-hidden="true"></div>
   <aside class="drawer review-drawer" id="reviewDrawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reviewDetailsTitle" tabindex="-1">
-    <div class="drawer-heading"><div><p class="eyebrow">Application record · not Gold</p><h2 id="reviewDetailsTitle">Candidate details</h2></div><button class="icon-button" id="closeReviewDetails" type="button" aria-label="Close candidate details"><svg aria-hidden="true"><use href="#i-close" /></svg></button></div>
+    <div class="drawer-heading"><div><p class="eyebrow">Check your timetable</p><h2 id="reviewDetailsTitle">Review class</h2></div><button class="icon-button" id="closeReviewDetails" type="button" aria-label="Close candidate details"><svg aria-hidden="true"><use href="#i-close" /></svg></button></div>
+    <section id="studentEditor" class="student-editor">
+      <h3 id="studentTitle">Edit class</h3>
+      <button id="studentOriginal" class="button secondary" type="button">View original timetable</button>
+      <div id="studentCrop"></div>
+      <label>Detail to correct<select id="studentField"></select></label>
+      <label>Corrected detail<input id="studentValue" maxlength="10000"></label>
+      <label>Source text you checked<select id="studentEvidence"></select></label>
+      <label>Why are you changing this?<textarea id="studentReason" maxlength="2000" rows="2" placeholder="Describe what you read in the original timetable"></textarea></label>
+      <label class="student-confirm"><input id="studentConfirmed" type="checkbox"> I checked the original timetable and confirm this corrected detail.</label>
+      <div class="review-workflow-actions"><button id="studentSave" class="button primary" type="button" disabled>Save correction</button><button id="studentRecheck" class="button secondary" type="button" disabled>Check saved class</button><button id="studentReload" class="button secondary" type="button">Refresh saved class</button></div>
+      <p id="studentFeedback" role="status" aria-live="polite">Select Edit class on a class card.</p>
+    </section>
+    <details id="advancedClassReview"><summary>Advanced Details and review history</summary>
     <p id="reviewTaskStatus" role="status" aria-live="polite"></p>
     <div id="reviewEventDetails"></div>
     <div class="review-workflow-actions" id="reviewTaskActions">
@@ -605,6 +666,7 @@
     </div>
     <section id="reviewDiagnostics" aria-label="Current revision read-only diagnostics"></section>
     <section id="reviewHistory" aria-label="Authorized correction and audit history"></section>
+    </details>
   </aside>
   <div class="intranet-modal-backdrop" id="intranetModalBackdrop"></div>
 
@@ -690,9 +752,13 @@
   <script src="./js/upload.js" defer></script>
   <script src="./js/intranet.js" defer></script>
   <script src="./js/analysis.js" defer></script>
+  <script src="./js/temporal-scope.js" defer></script>
+  <script src="./js/schedule-check.js" defer></script>
   <script src="./js/controls.js" defer></script>
   <script src="./js/review.js" defer></script>
   <script src="./js/sandbox.js" defer></script>
+  <script src="./js/calendar-checks.js" defer></script>
+  <script src="./js/student-review.js" defer></script>
   <script src="./js/app.js" defer></script>
 <dialog id="sourceZoom" class="source-zoom" aria-labelledby="sourceZoomTitle">
     <header><h2 id="sourceZoomTitle">Original timetable</h2><button id="closeSourceZoom" type="button" class="button secondary">Close</button></header>

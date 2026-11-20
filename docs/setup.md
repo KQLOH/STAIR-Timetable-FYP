@@ -2,14 +2,14 @@
 
 The README in the branch being reviewed is the primary setup guide. The repository's default branch can lag the owner's unpublished local work. Clone the **published branch supplied by the owner**, not an assumed historical release branch.
 
-After the proposed supervisor branch has actually been approved and published, an example checkout is:
+For the current working-system checkpoint, clone this branch:
 
 ```powershell
-git clone --branch codex/supervisor-review-20261116 https://github.com/KQLOH/STAIR-Timetable-FYP.git
+git clone --branch codex/student-system-completion https://github.com/KQLOH/STAIR-Timetable-FYP.git
 Set-Location STAIR-Timetable-FYP
 ```
 
-That branch name is a publication proposal until the owner confirms it exists. If a different branch is shared, substitute that exact name. A supervisor can inspect a public branch in GitHub without cloning or using private timetable data.
+The default branch and older checkpoint branches can differ from this working-system snapshot. A supervisor can inspect the published branch in GitHub without cloning or using private timetable data. Saved-review restoration has automated and synthetic browser coverage; genuine authorized OCR2 browser verification remains incomplete.
 
 ## Dependencies
 
@@ -37,6 +37,18 @@ whoami /user
 Open http://127.0.0.1:8020. Use your own interactive Windows console and source file. Follow [source authorization, correction and restart](local-student-review.md). No university password is needed for local uploaded-file review. Windows account authentication is not TAR UMT SSO. The ordinary server does not automatically grant authority. Type `quit` to stop.
 
 Do not delete existing storage to fix a startup problem. The host creates absent user-local directories securely, rejects unsafe paths/reparse points, and fails closed on corruption/permission failures. It prints the real encrypted storage path, including Store Python redirection. Records are not portable plaintext exports and are never a shipped research dataset.
+
+## Authorized institutional retrieval (FR2)
+
+On the local Windows student host, select **Connect TAR UMT Intranet** and enter your own institution-authorized Student ID and password in the browser form. Do not put credentials in commands, configuration, logs or Git. Use this connection only where TAR UMT permits it. Uploaded-file review does not require an institutional password.
+
+Connect submits to the existing official HTTPS portal and discovers timetable parameters from its authenticated response. Unsupported sign-in challenges or missing timetable links fail closed. Refresh reuses the in-memory institutional session; Disconnect logs out and discards its cookies. STAIR does not persist the password or connection token. After backend restart, connect again. Institutional login does not grant Windows correction access, independent verification, ACCEPT eligibility or calendar approval.
+
+Failed sign-in, expired-session handling and the student-host integration have synthetic backend and Chrome coverage. The public official login page is reachable; **real authenticated retrieval still requires a permitted account holder's live test**. Synthetic portal fixtures are not evidence of successful institutional authentication. Do not send account credentials to another person to run this test.
+
+Structured TAR UMT captures now receive source-bound validation and REVIEW/ABSTAIN decisions without OCR. The preview remains read-only. A selected week does not establish semester recurrence, independent verification or registered ACCEPT. Corrections still require the existing Windows console's explicit source-scoped consent; an exact matching user-provided UTF-8 `.html` original is supported. STAIR does not automatically save or export authenticated pages, and institutional sign-in does not authorize editing.
+
+For offline PRE-03 software checks, `python -m backend.review.operating_point --input <private-validation-input.json> --out <new-private-proposal.json>` selects from the supplied frozen grid. Replace `--out` with `--check <private-proposal.json>` to verify the frozen input/configuration binding. Existing output files are never overwritten. These are **proposals and integrity checks, not authoritative registration**; synthetic labels cannot grant ACCEPT. Actual PRE-01/PRE-02 evidence, independently checked validation references and approved authority registration remain required.
 
 ## Read-only demo
 

@@ -13,8 +13,8 @@ def binding(bundle,event):
         source_document_id=bundle.packet.source.source_document_id,bundle_digest=digest(bundle.model_dump(mode='json')))
 
 
-def build_preview(bundle,snapshot,*,test_authorized=False,clock=utc_now):
-    results=tuple(assess(bundle,e,test_authorized=test_authorized) for e in bundle.packet.events)
+def build_preview(bundle,snapshot,*,test_authorized=False,clock=utc_now,registry=None):
+    results=tuple(assess(bundle,e,test_authorized=test_authorized,registry=registry) for e in bundle.packet.events)
     keys=[e.identity.stable_key for e in bundle.packet.events if e.identity.stable_key]
     operations=[]; observed=set(keys)
     def operation(action,candidate,key,entry,before,after,reasons):

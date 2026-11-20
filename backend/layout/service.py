@@ -225,4 +225,6 @@ def assess_layout(packet,envelope,mode='constrained'):
         packet.model_dump_json(),graph.model_dump_json(),mode,PROFILE,canonical['status'],canonical['base_score_digest'],tuple(mapping.items()),
         tuple(e.model_dump_json() for e in events),tuple(e['candidate_id'] for e in canonical['unresolved_candidates']),
         tuple((gid,c['status']) for c in canonical['components'] for gid in c['group_ids']),json.dumps(canonical['findings']))
-    return tuple(assess_event(run,e,findings) for e in events) or (assess_event(run,None,findings),)
+    from backend.review.source_routing import source_conflicts
+    conflicts=source_conflicts(graph)
+    return tuple(assess_event(run,e,findings,source_graph=graph,source_findings=conflicts) for e in events) or (assess_event(run,None,findings,source_graph=graph,source_findings=conflicts),)

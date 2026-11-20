@@ -22,6 +22,8 @@ class STAIRException(ValueError):
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_PDF_PAGES = 100
+MAX_TEXT_BYTES = 128 * 1024
+MAX_TEXT_LINES = 2048
 
 
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".tsv"}
@@ -47,7 +49,7 @@ def _region(source_id: str, page: int, line: int, text: str, adapter: str,
 
 
 def _decode_text(content: bytes) -> str:
-    if not content or b"\x00" in content[:4096]:
+    if not content or b"\x00" in content:
         raise STAIRException("EMPTY_OR_BINARY_FILE", "The text file is empty or contains binary data.", 422)
     for encoding in ("utf-8-sig", "utf-8", "cp1252"):
         try:
@@ -60,7 +62,13 @@ def _decode_text(content: bytes) -> str:
 
 
 def _extract_text(source_id: str, content: bytes) -> list[EvidencePage]:
+    if len(content) > MAX_TEXT_BYTES:
+        raise STAIRException("TEXT_SIZE_LIMIT", "Use at most 128 KiB of timetable text at a time.", 413)
     text = _decode_text(content)
+    if len(text.splitlines()) > MAX_TEXT_LINES:
+        raise STAIRException("TEXT_LINE_LIMIT", "Use at most 2048 lines of timetable text at a time.", 413)
+    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", text):
+        raise STAIRException("INVALID_TEXT_CONTENT", "Timetable text contains unsupported control characters.", 422)
     regions = []
     group_index = 1
     for line_number, raw in enumerate(text.splitlines(), 1):
@@ -292,6 +300,9 @@ def _ocr_image(source_id: str, image, page_number: int, adapter: str, *, collect
         failure = STAIRException("OCR_UNAVAILABLE", str(error), 503)
         failure.diagnostic_code = error.code
         raise failure from error
+    if collector is not None and not hasattr(collector,'capture_page'):
+        from backend.layout.ruled_capture import recover_empty_header
+        data,runtime=recover_empty_header(image,data,runtime,recognize)
     # Preserve recognized source text. The old grid helper injects a weekday,
     # normalized times and "weekly"; it is retained but excluded from this route.
 

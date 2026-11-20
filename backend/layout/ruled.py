@@ -15,7 +15,7 @@ from backend.models.event import CanonicalTimetable, CanonicalEvent, FieldState
 from backend.reconstruction.models import (digest, development_settings, Context,
     EventGroup, FieldNode, Finding)
 from backend.reconstruction.candidates import (build_graph, _extract, _node, FIELDS,
-    DAY_RE, TIME_RE, CLASS_RE, subject_matches)
+    DAY_RE, DATE_RE, TIME_RE, CLASS_RE, subject_matches)
 from backend.reconstruction.decoder import decode
 from backend.reconstruction.adapter import canonical_event
 from backend.review.binding import recover_selection, BoundRun
@@ -23,12 +23,13 @@ from backend.review.policy import assess_event
 from backend.layout.service import layout_graph, relations, ambiguous_clock
 from backend.layout.ruled_models import PROFILE, RuledEvidence, MAX_CELLS, MAX_GROUPS
 
-CONFIG={'profile_id':PROFILE,'version':'s2a.1','status':'APPLICATION_ONLY_NOT_REGISTERED',
+CONFIG={'profile_id':PROFILE,'version':'s2a.3','status':'APPLICATION_ONLY_NOT_REGISTERED',
         'family':'axis-aligned-day-rows-time-range-columns','max_cells':MAX_CELLS,
         'max_groups':MAX_GROUPS,'closed_separator_coverage':.96,'absent_separator_coverage':.05,
         'pixel_threshold':150,'max_pixels_per_page':8000000,'max_total_pixels':16000000,
         'max_pages':8,'max_words_per_page':1600,'max_operations':300000,
-        'word_ownership':'whole box containment, 2px tolerance; competing overlaps unresolved'}
+        'word_ownership':'whole box containment, 2px tolerance; competing overlaps unresolved',
+        'glyph_aware_separator_measurements':True,'local_horizontal_cell_splits':True,'empty_header_ocr_retry':True}
 CONFIG_HASH=digest(CONFIG)
 
 
@@ -36,7 +37,7 @@ def ordered(words):
     # Geometry determines within-cell reading order; original OCR order is retained separately.
     lines=[]
     for w in sorted(words,key=lambda w:(w.bbox.y0,w.bbox.x0,w.evidence_id)):
-        matches=[line for line in lines if abs(line[0].bbox.y0-w.bbox.y0)<=max(2,(w.bbox.y1-w.bbox.y0)*.4)]
+        matches=[line for line in lines if abs(line[0].bbox.y0-w.bbox.y0)<=max(2,(w.bbox.y1-w.bbox.y0)*.4) or min(line[0].bbox.y1,w.bbox.y1)-max(line[0].bbox.y0,w.bbox.y0)>=.5*min(line[0].bbox.y1-line[0].bbox.y0,w.bbox.y1-w.bbox.y0)]
         if len(matches)==1:matches[0].append(w)
         else:lines.append([w])
     return [w for line in lines for w in sorted(line,key=lambda w:(w.bbox.x0,w.evidence_id))]
@@ -91,6 +92,22 @@ def cells(page,budget=None):
             uncertain=any(.05<coverage[row][i]<.96 for i in range(a+1,b))
             box=BoundingBox(x0=xs[a],y0=y0,x1=xs[b],y1=y1,coordinate_space='PIXELS')
             result.append({'row':row,'col':a,'end_col':b,'bbox':box,'ambiguous':uncertain,'words':[]})
+    local=g.get('local_horizontal_rules',[])
+    if not isinstance(local,list) or len(local)>256:raise ValueError('S2A_LOCAL_SEPARATOR_CAP')
+    for rule in local:
+        if not isinstance(rule,dict) or any(type(rule.get(k)) is not int for k in ('y','x0','x1')) or not (0<=rule['x0']<rule['x1']<page.width and 0<rule['y']<page.height):raise ValueError('S2A_LOCAL_GRID_MEASUREMENTS_INVALID')
+    split=[]
+    for cell in result:
+        a=cell['bbox'];inside=[v for v in local if a.y0+6<v['y']<a.y1-6 and min(v['x1'],a.x1)-max(v['x0'],a.x0)>2]
+        covers=[v for v in inside if v['x0']<=a.x0+2 and v['x1']>=a.x1-2]
+        if len(covers)!=len(inside):
+            cell['ambiguous']=True;issues.append({'code':'UNSUPPORTED_PARTIAL_CELL_SPLIT','page':page.page,'row':cell['row'],'col':cell['col']})
+        cuts=sorted({v['y'] for v in covers})
+        boundaries=[a.y0]+cuts+[a.y1]
+        for index,(top,bottom) in enumerate(zip(boundaries,boundaries[1:])):
+            split.append({**cell,'bbox':a.model_copy(update={'y0':top,'y1':bottom}),'row_fragment':index,'words':[]})
+    result=split
+    if len(result)>MAX_CELLS:raise ValueError('S2A_CELL_CAP')
     for w in page.words:
         charge(len(result)*2)
         b=w.bbox
@@ -157,6 +174,75 @@ def _name(source,span,context):
     return [_node(source,span,'course_name',raw,a,a+len(raw),context)]
 
 
+# These aliases apply only to a corroborated left-hand weekday axis.
+SHORT_DAYS={'mo':1,'tu':2,'we':3,'th':4,'fr':5,'sa':6,'su':7}
+ROLE_LINE=re.compile(r'^(?:room|venue|location|lecturer|instructor|teacher|staff|group|section|cohort|timezone|dr[.]?|prof[.]?)\b',re.I)
+NON_SESSION=re.compile(r'^(?:free(?: time| period)?|lunch(?: break)?|break|holiday|no class(?:es)?|office hours)\s*$',re.I)
+
+
+def row_header_text(cell):
+    # A printed date can share the weekday cell. No unrelated row text is
+    # discarded, and lexical dates are normalized by the existing field parser.
+    raw=cell['text'].strip();dates=list(DATE_RE.finditer(raw))
+    remaining=DATE_RE.sub('',raw).strip(' ,;:()')
+    standard=DAY_RE.fullmatch(remaining)
+    short=re.sub(r'\s+','',remaining).lower().rstrip('.')
+    valid=len(dates)<=1 and (standard is not None or short in SHORT_DAYS or (len(dates)==1 and not remaining))
+    return remaining,valid
+
+
+def weekday_cells(pagecells):
+    left=[c for c in pagecells if c['col']==0 and not c['ambiguous']]
+    text={id(c):row_header_text(c) for c in left}
+    short=[c for c in left if text[id(c)][1] and re.sub(r'\s+','',text[id(c)][0]).lower().rstrip('.') in SHORT_DAYS]
+    values=[SHORT_DAYS[re.sub(r'\s+','',text[id(c)][0]).lower().rstrip('.')] for c in sorted(short,key=lambda c:c['row'])]
+    corroborated=len(values)>=3 and len(values)==len(set(values)) and values==sorted(values)
+    result={id(c):None for c in left if text[id(c)][1] and (DAY_RE.fullmatch(text[id(c)][0]) or not text[id(c)][0])}
+    if corroborated:result.update({id(c):SHORT_DAYS[re.sub(r'\s+','',text[id(c)][0]).lower().rstrip('.')] for c in short})
+    return result
+
+
+def time_header(cell):
+    raw=cell['text'].strip()
+    if raw.endswith('.') and not raw.endswith('..'):raw=raw[:-1].rstrip()
+    exact=TIME_RE.fullmatch(raw)
+    if exact:return exact
+    ranges=list(TIME_RE.finditer(raw))
+    if len(ranges)!=1:return None
+    match=ranges[0];prefix=raw[:match.start()].strip()
+    if not re.fullmatch(r'\d{1,2}',prefix) or raw[match.end():].strip():return None
+    # A period number is metadata only when its own baseline is above the range.
+    before=[];clock=[];cursor=0
+    for word in cell.get('words',[]):
+        end=cursor+len(word.text.strip())
+        if end<=match.start():before.append(word)
+        elif cursor<match.end():clock.append(word)
+        cursor=end+1
+    if before and clock and max(w.bbox.y1 for w in before)<min(w.bbox.y0 for w in clock):return match
+    return None
+
+
+def name_title(cell,pagecells,days):
+    if cell['col']==0 or cell['ambiguous']:return None
+    if not days or not any(c['col']==0 and c['text'].strip() and c['row']==cell['row'] and c['end_col']<=cell['col'] for c in pagecells):return None
+    if not any(c['row']<cell['row'] and c['col']>=cell['col'] and c['end_col']<=cell['end_col'] and time_header(c) for c in pagecells):return None
+    lines=[]
+    for word in cell['words']:
+        if not lines or abs(lines[-1][0].bbox.y0-word.bbox.y0)>max(2,(word.bbox.y1-word.bbox.y0)*.4):lines.append([])
+        lines[-1].append(word)
+    title=[];previous=None
+    for line in lines:
+        if previous and min(w.bbox.y0 for w in line)-max(w.bbox.y1 for w in previous)>max(w.bbox.y1-w.bbox.y0 for w in previous):break
+        text=' '.join(w.text.strip() for w in line)
+        if ROLE_LINE.match(text) or TIME_RE.search(text) or DAY_RE.fullmatch(text.strip()) or CLASS_RE.fullmatch(text.strip()):break
+        if NON_SESSION.fullmatch(text.strip()):return None
+        if not re.search('[A-Za-z]',text):break
+        title.extend(w.text.strip() for w in line);previous=line
+    raw=re.sub(r'^(?:course\s+name|subject)\s*:\s*','',' '.join(title),flags=re.I)
+    if subject_matches(raw) or not re.search(r'[A-Za-z]{2,}',raw) or len(raw)>200 or re.fullmatch(r'[A-Za-z_-]*\d+[A-Za-z0-9_-]*',raw):return None
+    return raw
+
+
 def ruled_graph(packet,supplement):
     if not isinstance(supplement,RuledEvidence):supplement=RuledEvidence.model_validate(supplement)
     validate_binding(packet,supplement)
@@ -164,7 +250,9 @@ def ruled_graph(packet,supplement):
     extras=list(word_spans(packet,supplement)); derived=[]; allgroups=[];issues=[];cellmeta=[];budget=[0]
     for page in supplement.pages:
         pagecells,diagnostics=cells(page,budget);issues.extend(diagnostics)
-        courses=[c for c in pagecells if subject_matches(c['text']) and c['col']>0]
+        day_axis=weekday_cells(pagecells)
+        titles={id(c):title for c in pagecells if (title:=name_title(c,pagecells,day_axis))}
+        courses=[c for c in pagecells if c['col']>0 and (subject_matches(c['text']) or id(c) in titles)]
         if not courses:
             # Original M5.2 behavior for non-grid multiline evidence, plus bounded
             # same-line compound context. No guessed table axes in this branch.
@@ -194,6 +282,21 @@ def ruled_graph(packet,supplement):
         derived.extend(derived_cells.values())
         temp=CanonicalTimetable(source=packet.source,evidence=tuple(derived_cells[id(c)] for c in courses))
         rawgraph=build_graph(temp,settings);aliases=rawgraph.capture_aliases
+        # Name-only cells previously vanished into the non-grid fallback. Add a
+        # group over the unchanged source text, never a fabricated course code.
+        named_ids={aliases[derived_cells[id(c)].evidence_id]:c for c in courses if id(c) in titles}
+        groups=[g for g in rawgraph.groups if not set(g.evidence_ids)&set(named_ids)]
+        spans={span.evidence_id:span for span in rawgraph.evidence}
+        for sid,c in named_ids.items():
+            span=spans[sid];raw=titles[id(c)];a=span.raw_text.index(raw)
+            nodes=[_node(packet.source,span,'course_name',raw,a,a+len(raw),Context())]
+            # Explicit field-role lines remain separate from the wrapped title.
+            for match in re.finditer(r'\b(?:room|venue|location|lecturer|instructor|group|section|cohort|timezone)\s*[:=-]?',span.raw_text,re.I):
+                stop=next((m.start() for m in re.finditer(r'\b(?:room|venue|location|lecturer|instructor|group|section|cohort|timezone)\s*[:=-]?',span.raw_text[match.end():],re.I)),None)
+                end=match.end()+stop if stop is not None else len(span.raw_text)
+                nodes.extend(n for n in _extract(packet.source,span,match.start(),end,Context()) if n.field!='course_code')
+            groups.append(domain_group(EventGroup(group_id='s2a-name-'+digest({'cell':sid,'title':raw}),evidence_ids=(sid,),domains={}),[refs(n,span,c['words']) for n in nodes],('SOURCE_NAME_ONLY_CELL',)))
+        rawgraph=rawgraph.model_copy(update={'groups':tuple(groups)})
         derived.extend(rawgraph.evidence)
         bysid={aliases[derived_cells[id(c)].evidence_id]:c for c in courses}
         for group in rawgraph.groups:
@@ -208,11 +311,11 @@ def ruled_graph(packet,supplement):
                 nodes.extend(refs(n.model_copy(update={'shared':True,'transformations':n.transformations+('s2a-single-cell-shared-day',)}),span,cell['words'])
                     for n in _extract(packet.source,span,0,len(span.raw_text),Context()) if n.field=='day_of_week')
             nodes.extend(refs(n,span,cell['words']) for n in _name(packet.source,span,Context()))
-            days=[c for c in pagecells if c['row']==cell['row'] and c['end_col']<=cell['col'] and DAY_RE.fullmatch(c['text'].strip())]
-            times=[c for c in pagecells if c['row']<cell['row'] and c['col']>=cell['col'] and c['end_col']<=cell['end_col'] and TIME_RE.fullmatch(c['text'].strip())]
+            days=[c for c in pagecells if c['row']==cell['row'] and c['end_col']<=cell['col'] and id(c) in day_axis]
+            times=[c for c in pagecells if c['row']<cell['row'] and c['col']>=cell['col'] and c['end_col']<=cell['end_col'] and time_header(c)]
             unsupported_axis=[c for c in pagecells if c['row']<cell['row'] and
                 c['col']>=cell['col'] and c['end_col']<=cell['end_col'] and
-                not subject_matches(c['text']) and not TIME_RE.fullmatch(c['text'].strip()) and
+                not subject_matches(c['text']) and not time_header(c) and
                 re.search(r'\d{1,2}:\d{2}|\?{2,}|\b(?:TBA|UNKNOWN|UNREADABLE)\b',c['text'],re.I)]
             # A nearer unreadable repeated header must not resurrect an older
             # readable range. Unsupported labels retain raw evidence, no values.
@@ -226,8 +329,18 @@ def ruled_graph(packet,supplement):
             diagnostics=[]
             if len(days)==1 and not days[0]['ambiguous']:
                 h=derived_cells[id(days[0])]
-                nodes.extend(refs(n.model_copy(update={'shared':True}),h,days[0]['words']) for n in _extract(packet.source,h,0,len(h.raw_text),Context()) if n.field=='day_of_week')
-            else:diagnostics.append('DAY_HEADER_OWNERSHIP_UNRESOLVED')
+                if day_axis[id(days[0])] is None:
+                    day_nodes=[n for n in _extract(packet.source,h,0,len(h.raw_text),Context()) if n.field in {'day_of_week','date'}]
+                else:
+                    day_nodes=[_node(packet.source,h,'day_of_week',h.raw_text,0,len(h.raw_text),Context(),value=day_axis[id(days[0])])]+[n for n in _extract(packet.source,h,0,len(h.raw_text),Context()) if n.field=='date']
+                nodes.extend(refs(n.model_copy(update={'shared':True,'transformations':n.transformations+('s2a-corroborated-weekday-axis',)}),h,days[0]['words']) for n in day_nodes)
+            else:
+                diagnostics.append('DAY_HEADER_OWNERSHIP_UNRESOLVED')
+                unreadable=[c for c in pagecells if c['col']==0 and c['row']==cell['row'] and c['text'].strip()]
+                if len(unreadable)==1 and day_axis:
+                    h=derived_cells[id(unreadable[0])];n=_node(packet.source,h,'day_of_week',h.raw_text,0,len(h.raw_text),Context())
+                    nodes.extend(refs(v.model_copy(update={'shared':True}),h,unreadable[0]['words']) for v in _extract(packet.source,h,0,len(h.raw_text),Context()) if v.field=='date')
+                    nodes.append(refs(n.model_copy(update={'value':None,'state':FieldState.UNRESOLVED,'shared':True,'transformations':n.transformations+('s2a-unreadable-row-header-no-day-inference',)}),h,unreadable[0]['words']))
             # Full coverage of the spanned columns and contiguous printed ranges,
             # intact boundaries, one course context, and explicit clock authority.
             times.sort(key=lambda c:c['col'])
@@ -239,7 +352,7 @@ def ruled_graph(packet,supplement):
                 time_nodes.append([refs(n.model_copy(update={'shared':True}),h,c['words']) for n in ns if n.field in {'start_time','end_time'}])
             if any(len(ns)!=2 or any(n.state!=FieldState.PRESENT for n in ns) for ns in time_nodes):valid=False
             if valid and any(a[1].value!=b[0].value for a,b in zip(time_nodes,time_nodes[1:])):valid=False
-            if cell['ambiguous'] or len(subject_matches(cell['text']))!=1:valid=False
+            if cell['ambiguous'] or (id(cell) not in titles and len(subject_matches(cell['text']))!=1):valid=False
             if not any(n.field=='start_time' for n in nodes):
                 if valid:
                     pair='time-pair:s2a-'+digest({'cell':span.evidence_id,'headers':[derived_cells[id(c)].evidence_id for c in times]})
@@ -263,7 +376,7 @@ def ruled_graph(packet,supplement):
             allgroups.append(domain_group(group,nodes,diagnostics))
         cellmeta.extend({'page':page.page,'row':c['row'],'columns':[c['col'],c['end_col']],
             'bbox':c['bbox'].model_dump(),'word_ids':[w.evidence_id for w in c['words']],
-            'ambiguous':c['ambiguous'],'text':c['text']} for c in pagecells)
+            'row_fragment':c.get('row_fragment',0),'ambiguous':c['ambiguous'],'text':c['text']} for c in pagecells)
     if len(allgroups)>MAX_GROUPS:raise ValueError('S2A_GROUP_CAP')
     base=build_graph(packet,settings)
     evidence={s.evidence_id:s for s in (*base.evidence,*derived,*extras)}
@@ -271,7 +384,7 @@ def ruled_graph(packet,supplement):
     graph=base.model_copy(update={'evidence':tuple(evidence[k] for k in sorted(evidence)),
         'groups':tuple(sorted(allgroups,key=lambda g:g.group_id)),
         'diagnostics':base.diagnostics+('S2A_APPLICATION_ONLY',)})
-    layout={'profile':PROFILE,'version':'s2a.1','config_digest':CONFIG_HASH,'cells':cellmeta,'issues':issues,'association_operations':budget[0],
+    layout={'profile':PROFILE,'version':'s2a.3','config_digest':CONFIG_HASH,'cells':cellmeta,'issues':issues,'association_operations':budget[0],
             'trust':'CALLER_SUPPLIED_PIXEL_AND_OCR_EVIDENCE_NOT_AUTHENTICATED','registered_method':False}
     return graph,settings,layout
 
@@ -308,4 +421,6 @@ def assess_ruled(packet,supplement,envelope,mode='constrained'):
         expected['canonical_digest'],packet.model_dump_json(),graph.model_dump_json(),mode,PROFILE,c['status'],
         c['base_score_digest'],tuple(mapping.items()),tuple(e.model_dump_json() for e in events),
         tuple(e['candidate_id'] for e in c['unresolved_candidates']),tuple((gid,comp['status']) for comp in c['components'] for gid in comp['group_ids']),json.dumps(c['findings']))
-    return tuple(assess_event(run,e,findings) for e in events) or (assess_event(run,None,findings),)
+    from backend.review.source_routing import source_conflicts
+    conflicts=source_conflicts(graph)
+    return tuple(assess_event(run,e,findings,source_graph=graph,source_findings=conflicts) for e in events) or (assess_event(run,None,findings,source_graph=graph,source_findings=conflicts),)

@@ -42,7 +42,15 @@ for case in ('pending_upload_cannot_reuse_tar','upload_clears_structured_packet'
              'forced_analysis_invalidation','login_failure_clears_password','sample_completeness_is_field_presence',
              'pagehide_invalidates_analysis'):attach(case)
 
-for case in ('expired_refresh_clears_controls_preserves_events','expired_disconnect_clears_controls',
+for case in ('structured_reconstruction_parse_error_never_echoes_private_content','structured_stale_policy_is_rejected_before_source_adoption',
+             'portal_redirect_reason_is_readable_but_never_echoes_private_data','portal_unknown_reason_cannot_leak_private_or_prototype_values',
+             'portal_502_displays_only_fixed_stage_explanation','portal_502_unknown_stage_cannot_echo_private_data',
+             'invalid_json_does_not_echo_remote_content','session_invalid_json_does_not_echo_remote_content',
+             'rejected_connect_packet_closes_new_session_preserves_old_source',
+             'password_cleared_while_login_pending_and_redirects_refused','login_errors_do_not_echo_private_response',
+             'previous_session_cleanup_cannot_interrupt_new_timetable_commit','missing_token_cannot_replace_current_source',
+             'session_transport_does_not_forward_cookies_or_follow_redirects',
+             'expired_refresh_clears_controls_preserves_events','expired_disconnect_clears_controls',
              'late_expired_refresh_preserves_new_session','late_expired_disconnect_preserves_new_session',
              'refresh_server_error_retains_unconfirmed_connection','session_error_redacts_payload_preserves_http_status'):attach(case)
 

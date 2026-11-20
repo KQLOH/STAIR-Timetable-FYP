@@ -57,7 +57,7 @@ def _bridge(request):
     return bridge.store,principal
 
 
-async def _body(request,model,*,max_bytes=MAX_BODY_BYTES):
+async def _body(request,model,*,max_bytes=MAX_BODY_BYTES,field_errors=False):
     if request.headers.get('content-type','').split(';')[0].strip().lower()!='application/json':
         raise HTTPException(415,'JSON_BODY_REQUIRED')
     body=bytearray()
@@ -65,7 +65,16 @@ async def _body(request,model,*,max_bytes=MAX_BODY_BYTES):
         body.extend(chunk)
         if len(body)>max_bytes: raise HTTPException(413,'REVIEW_REQUEST_TOO_LARGE')
     try: return model.model_validate_json(body)
-    except (ValidationError,ValueError): raise HTTPException(422,'INVALID_REVIEW_CONTRACT') from None
+    except ValidationError as error:
+        if not field_errors:raise HTTPException(422,'INVALID_REVIEW_CONTRACT') from None
+        allowed={'expected_version','rows','decision','candidate_id','page','source_session','evidence_ids','note','checked_pages','source_confirmed','scope_confirmed'}
+        fields=[]
+        for item in error.errors(include_input=False,include_url=False,include_context=False):
+            kind=item['type'];path=[p if isinstance(p,int) or p in allowed else 'field' for p in item['loc']]
+            message=('This field is required.' if kind in {'missing','string_too_short'} else 'Use at most '+str({'source_session':200,'note':2000,'candidate_id':200}.get(path[-1], 'the allowed number of'))+' characters.' if kind=='string_too_long' else 'Enter a whole page number within the source.' if kind.startswith(('int','greater','less')) else 'Choose a supported review status.' if path[-1:] == ['decision'] else 'Check this field; its value is invalid.')
+            fields.append({'path':path,'code':kind,'message':message})
+        raise HTTPException(422,{'code':'INVALID_SOURCE_CHECK_FORM','field_errors':fields}) from None
+    except ValueError:raise HTTPException(422,'INVALID_REVIEW_CONTRACT') from None
 
 
 def _redact(value):
@@ -86,7 +95,9 @@ def _decision(record):
 
 async def _invoke(function,*args,**kwargs):
     try: return await run_in_threadpool(function,*args,**kwargs)
-    except ReviewError as exc: raise HTTPException(exc.status_code,exc.code) from None
+    except ReviewError as exc:
+        detail={'code':exc.code,'field_errors':exc.field_errors} if getattr(exc,'field_errors',None) else exc.code
+        raise HTTPException(exc.status_code,detail) from None
     except ValueError: raise HTTPException(422,'INVALID_REVIEW_OPERATION') from None
 
 
@@ -94,9 +105,13 @@ async def _invoke(function,*args,**kwargs):
 async def policy_assess(request:Request):
     payload=await _body(request,AssessmentInput)
     run=await _invoke(bind_input,payload)
-    decisions=await _invoke(assess_run,run)
-    return {'profile':'m5-development-v1','provenance_trust':'CALLER_SUPPLIED_INTEGRITY_CHECKED',
-            'registered_routing_ready':False,'decisions':[_decision(d) for d in decisions]}
+    registry=getattr(request.app.state,'m5_operating_registry',None)
+    if registry is not None and registry.mode!='TEST_ONLY':registry=None
+    decisions=await _invoke(assess_run,run,registry=registry)
+    from backend.review.source_routing import report
+    registered=any(d.registration_mode for d in decisions)
+    return {'profile':'m5-registered-v1' if registered else payload.policy_profile,'provenance_trust':'CALLER_SUPPLIED_INTEGRITY_CHECKED',
+            'registered_routing_ready':registered,'routing_report':report(decisions),'decisions':[_decision(d) for d in decisions]}
 
 
 @router.post('/api/review/ingest')
@@ -121,7 +136,7 @@ async def session(request:Request):
         'permissions':sorted(principal.permissions),'mode':principal.mode,
         'source_bindings':sorted(principal.source_bindings) if principal.source_bindings is not None else None,
         'scoped_workflow_enabled':principal.source_bindings is not None,
-        'storage':store.storage_kind,'purpose':'APPLICATION_REPAIR_NOT_GOLD',
+        'storage':store.storage_kind,'purpose':'APPLICATION_REPAIR_NOT_GOLD','source_check_recovery_version':1,
         'correction_contract':{'fields':list(EventContent.model_fields),'states':[s.value for s in FieldState],
             'max_fields':19,'max_evidence_ids':20,'max_raw_characters':10000,'max_reason_characters':2000,
             'human_assertions':'EXPLICIT_LINKED_SOURCE_READING_NOT_ORIGINAL_OCR_NOT_GOLD'}}
@@ -199,3 +214,88 @@ async def revalidate(task_id:UUID,request:Request):
     store,principal=_bridge(request)
     payload=await _body(request,RevalidationInput)
     return _redact((await _invoke(store.revalidate,task_id,payload.expected_etag,principal)).model_dump(mode='json'))
+
+
+# Same source-scoped host transport as field review; no HTTP verifier enrolment.
+from backend.analysis.schedule_checks import CheckStart, InventorySubmission, VerificationSubmission, CheckAnalysis
+
+
+def _checks(request):
+    store,principal=_bridge(request)
+    service=getattr(request.app.state,'m7_schedule_checks',None)
+    if service is None or service.store is not store:raise HTTPException(403,'SCHEDULE_CHECK_HOST_REQUIRED')
+    return service,principal
+
+
+@router.post('/api/review/schedule-checks/start')
+async def start_schedule_check(request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.start,await _body(request,CheckStart),principal))
+
+
+@router.get('/api/review/schedule-checks/{check_id}')
+async def get_schedule_check(check_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.get,str(check_id),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/primary')
+async def primary_schedule_check(check_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.submit,str(check_id),await _body(request,InventorySubmission,field_errors=True),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/verify')
+async def verify_schedule_check(check_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.verify,str(check_id),await _body(request,VerificationSubmission),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/analyze')
+async def analyze_schedule_check(check_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.analyze,str(check_id),await _body(request,CheckAnalysis),principal))
+
+
+@router.get('/api/review/schedule-checks/for-task/{task_id}')
+async def latest_schedule_check(task_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.latest,str(task_id),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/source-page/{page}')
+async def source_schedule_page(check_id:UUID,page:int,request:Request):
+    service,principal=_checks(request)
+    if request.headers.get('content-type','').split(';')[0]!='application/pdf':raise HTTPException(415,'PDF_BODY_REQUIRED')
+    raw=bytearray()
+    async for part in request.stream():
+        raw.extend(part)
+        if len(raw)>20*1024*1024:raise HTTPException(413,'SOURCE_PREVIEW_LIMIT')
+    return await _invoke(service.source_page,str(check_id),page,bytes(raw),principal)
+
+
+@router.post('/api/review/schedule-checks/{check_id}/temporal')
+async def temporal_schedule_check(check_id:UUID,request:Request):
+    from backend.analysis.temporal_scope import TemporalSubmission
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.save_temporal,str(check_id),await _body(request,TemporalSubmission),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/draft')
+async def save_schedule_draft(check_id:UUID,request:Request):
+    from backend.analysis.schedule_drafts import DraftSubmission
+    service,principal=_checks(request)
+    # Only the primary author can retrieve their own entered text, verbatim.
+    return await _invoke(service.save_draft,str(check_id),await _body(request,DraftSubmission),principal)
+
+
+@router.get('/api/review/schedule-checks/{check_id}/draft')
+async def get_schedule_drafts(check_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return await _invoke(service.recovery_drafts,str(check_id),principal)
+
+
+@router.get('/api/review/schedule-checks/for-task/{task_id}/available')
+async def available_schedule_checks(task_id:UUID,request:Request):
+    service,principal=_checks(request)
+    return _redact(await _invoke(service.available_checks,str(task_id),principal))

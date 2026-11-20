@@ -27,6 +27,82 @@ function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {
 function scope(){for(const [id,value] of Object.entries({analysisStart:'2026-01-05',analysisEnd:'2026-01-11',analysisZone:'Etc/UTC',analysisScope:'synthetic'}))get(id).value=value;}
 const output={version:'m7-development-v1',completeness:{label:'OBSERVED EVENTS ONLY',reason_codes:['TEST_BLOCKER']},facts:[],recommendations:[],recommendation_status:'BLOCKED_INCOMPLETE_SCHEDULE',registered_p1a_status:'NOT_EXECUTED',registered_blockers:[]};
 const cases={
+    async structured_reconstruction_parse_error_never_echoes_private_content(){
+        const data=JSON.parse(JSON.stringify(structured));data.application.reconstruction_json='PRIVATE_RESPONSE_CANARY';
+        assert.throws(()=>STAIRIntranet.structuredPacket(data),e=>e.message==='Invalid structured assessment binding.');
+    },
+    async structured_stale_policy_is_rejected_before_source_adoption(){
+        const data=JSON.parse(JSON.stringify(structured));data.application.policy[0].revision_id='00000000-0000-4000-8000-000000000000';
+        assert.throws(()=>STAIRIntranet.structuredPacket(data));
+    },
+    async portal_redirect_reason_is_readable_but_never_echoes_private_data(){
+        loginFields();global.fetch=async()=>({...response({stage:'LOGIN_SUBMISSION',reason:'ORIGIN_NOT_ALLOWED',detail:'PRIVATE_COOKIE_CANARY'}),ok:false,status:502});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');const text=get('intranetLoginError').textContent;
+        assert(text.includes('outside the approved institutional origin'));assert(!text.includes('PRIVATE_COOKIE_CANARY'));
+    },
+    async portal_unknown_reason_cannot_leak_private_or_prototype_values(){
+        for(const reason of ['PRIVATE_COOKIE_CANARY','constructor','__proto__']){
+            loginFields();global.fetch=async()=>({...response({stage:'LOGIN_SUBMISSION',reason}),ok:false,status:502});
+            await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');const text=get('intranetLoginError').textContent;
+            assert(!text.includes('PRIVATE_COOKIE_CANARY'));assert(!text.includes('function'));assert(!text.includes('[object'));
+        }
+    },
+    async portal_502_displays_only_fixed_stage_explanation(){
+        loginFields();global.fetch=async()=>({...response({detail:'PRIVATE_CANARY',stage:'SESSION_NAVIGATION'}),ok:false,status:502});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        const text=get('intranetLoginError').textContent;assert(text.includes('502'));assert(text.includes('timetable navigation'));assert(!text.includes('PRIVATE_CANARY'));
+    },
+    async portal_502_unknown_stage_cannot_echo_private_data(){
+        loginFields();global.fetch=async()=>({...response({detail:'PRIVATE_CANARY',stage:'PRIVATE_STAGE_CANARY'}),ok:false,status:502});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        const text=get('intranetLoginError').textContent;assert(text.includes('502'));assert(!text.includes('PRIVATE'));
+    },
+    async invalid_json_does_not_echo_remote_content(){
+        loginFields();global.fetch=async()=>({...response({}),json:async()=>{throw Error('PRIVATE_RESPONSE_CANARY');}});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        assert(!get('intranetLoginError').textContent.includes('PRIVATE_RESPONSE_CANARY'));assert(get('intranetLoginError').textContent.includes('Invalid TAR UMT response'));
+    },
+    async session_invalid_json_does_not_echo_remote_content(){
+        global.fetch=async()=>({...response({}),json:async()=>{throw Error('PRIVATE_RESPONSE_CANARY');}});
+        await assert.rejects(STAIRIntranet.sessionRequest('http://synthetic','/api/intranet/timetable','SYNTHETIC'),error=>!error.message.includes('PRIVATE_RESPONSE_CANARY'));
+    },
+    async rejected_connect_packet_closes_new_session_preserves_old_source(){
+        vm.runInThisContext('loadSampleData()');const s=stateView();s.connectionToken='synthetic-old';const old=s.events;
+        loginFields();const closed=[];global.fetch=async()=>response({success:true,connection_token:'synthetic-invalid',data:{events:null}});
+        global.STAIRIntranet={...STAIRIntranet,sessionRequest:async(base,path,token)=>{closed.push(token);return {success:true};}};
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        assert.equal(s.events,old);assert.equal(s.source,'sample');assert.equal(s.connectionToken,'synthetic-old');assert.deepEqual(closed,['synthetic-invalid']);
+    },
+    async password_cleared_while_login_pending_and_redirects_refused(){
+        loginFields();const d=deferred();let sent;
+        global.fetch=(url,options)=>{sent=options;return d.promise;};
+        const pending=vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        assert.equal(get('intranetPassword').value,'');assert.equal(sent.credentials,'omit');assert.equal(sent.redirect,'error');assert.equal(sent.cache,'no-store');
+        assert.equal(JSON.parse(sent.body).password,'SYNTHETIC-PASSWORD');d.resolve({...response({}),ok:false,status:401});await pending;
+    },
+    async login_errors_do_not_echo_private_response(){
+        loginFields();global.fetch=async()=>({...response({detail:'PRIVATE_CANARY'}),ok:false,status:500});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');
+        assert(!get('intranetLoginError').textContent.includes('PRIVATE_CANARY'));assert(get('intranetLoginError').textContent.includes('500'));
+    },
+    async previous_session_cleanup_cannot_interrupt_new_timetable_commit(){
+        loginFields();const s=stateView();s.connectionToken='synthetic-old';const d=deferred();
+        global.fetch=async()=>response({success:true,connection_token:'synthetic-new',data:structured});
+        global.STAIRIntranet={...STAIRIntranet,sessionRequest:()=>d.promise};
+        const pending=vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');await new Promise(r=>setImmediate(r));
+        assert.equal(s.connectionToken,'synthetic-new');assert.equal(s.events.length,structured.events.length);assert.equal(s.source,'tarumt_intranet_live');
+        vm.runInThisContext('loadSampleData()');d.resolve({success:true});await pending;assert.equal(s.source,'sample');
+    },
+    async missing_token_cannot_replace_current_source(){
+        vm.runInThisContext('loadSampleData()');loginFields();global.fetch=async()=>response({success:true,data:structured});
+        await vm.runInThisContext('connectLiveIntranet({preventDefault(){}})');assert.equal(stateView().source,'sample');assert.equal(stateView().connectionToken,null);
+    },
+    async session_transport_does_not_forward_cookies_or_follow_redirects(){
+        let options;global.fetch=async(url,sent)=>{options=sent;return response({success:true});};
+        await STAIRIntranet.sessionRequest('http://synthetic','/api/intranet/disconnect','SYNTHETIC');
+        assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');
+    },
+
     async pending_upload_cannot_reuse_tar(){assert.equal(STAIRAnalysis.packetFrom({...upload},source),null);},
     async upload_clears_structured_packet(){stateView().canonical=source;echo();assert.equal(stateView().canonical,null);},
     async source_switch_silent_reset(){

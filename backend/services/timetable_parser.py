@@ -379,10 +379,17 @@ def parse_intranet_response(
 
     events = []
     source_records = []
+    non_session_records = []
+    clock_label = re.compile(r"^(?:(?:[01]?\d|2[0-3]):[0-5]\d|24:00)(?:\s*[AP]M)?$",re.I)
 
     rows = timetable.find_all("tr")
 
     for row_index, row in enumerate(rows):
+
+        # Nested presentation tables belong to their containing session cell;
+        # they are not additional weekly timetable rows.
+        if row.find_parent('table') is not timetable:
+            continue
 
         cells = row.find_all(
             "td",
@@ -415,6 +422,16 @@ def parse_intranet_response(
 
         # A recognized header is not a session. Other malformed rows are retained.
         if "Day/Time" in first_cell_text:
+            continue
+
+        labels = [clean_space(cell.get_text(' ',strip=True)) for cell in cells]
+        nonempty = [label for label in labels if label]
+        if (date_match is None and (not first_cell_text or clock_label.fullmatch(first_cell_text))
+                and len(nonempty) >= 2 and all(clock_label.fullmatch(label) for label in nonempty)
+                and row.find('div',attrs={'data-rel':'tooltip'}) is None):
+            # The second header row contains slot end times, not classes.
+            # Retain its evidence without promoting each time label to an event.
+            non_session_records.append({'row_index':row_index,'raw_text':row.get_text(' ',strip=False),'raw_html':str(row),'role':'time_axis_header'})
             continue
 
         day = date_match.group(1).title() if date_match else None
@@ -488,6 +505,7 @@ def parse_intranet_response(
         "events": events,
         # Internal evidence is consumed by the adapter, not exposed as legacy fields.
         "_source_records": source_records,
+        "_non_session_records": non_session_records,
         "_source_sha256": sha256(html_content.encode("utf-8")).hexdigest(),
         "_metadata_text": "\n".join(
             [match.group(0) for match in re.finditer(r"<strong>\s*\d{6}\s+Semester\s*</strong>", html_content, re.IGNORECASE)]

@@ -25,7 +25,7 @@ class S3aControlTests(unittest.TestCase):
 
     def test_extraction_controls_and_script_order_preserved(self):
         page=BeautifulSoup((ROOT/'frontend/index.html').read_text(encoding='utf-8'),'html.parser')
-        self.assertEqual(page.find(id='fileInput')['accept'],'.pdf,.png,.jpg,.jpeg')
+        self.assertEqual(page.find(id='fileInput')['accept'],'.pdf,.png,.jpg,.jpeg,.txt')
         ids={item.get('id') for item in page.select('input[type=checkbox]')}
         self.assertTrue({'runP1','runLayoutAssociation','runRuledGridS2a','runBlockGridS2b'}<=ids)
         self.assertFalse(page.find(id='runRuledGridS2a').has_attr('checked'))

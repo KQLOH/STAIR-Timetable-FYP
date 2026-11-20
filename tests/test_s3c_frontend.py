@@ -35,7 +35,7 @@ def attach(case):
 
 
 for case in ['public_default_deny','authorized_catalogue_only','exact_diff_and_explicit_approval','execute_and_idempotent_replay',
-    'update_has_meaningful_exact_difference','source_selection_invalidates_approval','history_real_journal_and_recovery_selection',
+    'update_has_meaningful_exact_difference','executed_preview_requires_new_explicit_approval','expired_approval_is_known_refusal_and_can_recover','source_selection_invalidates_approval','history_real_journal_and_recovery_selection',
     'stale_preview_not_reported_as_approval','revoked_approval_preserves_host_session','interrupted_execution_requires_reconciliation',
     'duplicate_click_submits_once','expiry_clears_private_views','late_reply_cannot_restore_session','safe_text_and_no_storage_authority','session_expiry_timer_clears_authority','approval_expiry_requires_new_preview']:
     attach(case)

@@ -34,7 +34,7 @@ def validation_view(run, events, evidence, context):
             shared=any(t in {'source-header-scope','same-cell-course-context','explicit-source-context-link'} for t in obs.transformations)
             if obs.origin!='human':
                 matching=[n for n in original.domains[obs.field_name] if n.evidence_ids==obs.evidence_ids
-                          and n.raw==obs.raw_value and n.transformations+('m4-evidence-adapter-v1',)==obs.transformations]
+                          and n.raw==obs.raw_value and (n.transformations if run.profile=='tarumt-structured-review-v1' else n.transformations+('m4-evidence-adapter-v1',))==obs.transformations]
                 if matching:
                     shared=all(n.shared for n in matching)
                     ownership=list(matching[0].ownership_units)
