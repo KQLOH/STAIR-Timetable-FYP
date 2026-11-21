@@ -502,9 +502,9 @@
         if (result.mime === 'text/plain') {
             const text=node('pre',result.sourceText || '', 'copied-source-text');
             text.tabIndex=0;text.setAttribute('aria-label','Original copied timetable text');
-            const download=node('a','Save original text for editing access','button secondary');
+            const download=node('a',global.STAIRAccountMode?'Download original text':'Save original text for editing access','button secondary');
             download.href=result.previewUrl;download.download='copied-timetable.txt';
-            container.append(text,download,node('p','Keep this exact text file to reconnect saved reviews. To enable editing, personally authorize the saved original in the local review app. Copied text does not retain the original page layout.'));
+            container.append(text,download,node('p',global.STAIRAccountMode?'Your original text is retained as source evidence. Editing connects to your account automatically. Copied text does not retain the original page layout.':'Keep this exact text file to reconnect saved reviews. To enable editing, personally authorize the saved original in the local review app. Copied text does not retain the original page layout.'));
         } else if (result.mime === "application/pdf") {
             const frame=node("iframe");frame.src=result.previewUrl;frame.title="Local uploaded PDF";frame.setAttribute("sandbox", "");
             const link=node("a", "Open local PDF if embedded preview is unsupported");link.href=result.previewUrl;link.target="_blank";link.rel="noopener noreferrer";

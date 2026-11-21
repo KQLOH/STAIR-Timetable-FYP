@@ -65,6 +65,22 @@ function resize(value) { narrow = value; for (const f of media.listeners) f(); }
 function seed(events, meta = null) { state.events = events; state.meta = meta; state.source = 'SYNTHETIC'; run('calendarViewport = null; renderCalendar()'); }
 const event = (subject, date, day = 'monday') => ({subject, date, day, start: '09:00', end: '10:00', venue: 'TEST-ROOM', status: 'review'});
 const cases = {
+    saved_calendar_separate_from_output() {
+        global.STAIRAccountMode = true;
+        const savedView=get('view-saved-calendar'), savedNav=get('nav-saved-calendar');
+        savedNav.dataset.view='saved-calendar';views.push(savedView);nav.push(savedNav);
+        run('showView("saved-calendar")');
+        assert(savedView.classList.contains('active'));
+        assert(!get('view-calendar').classList.contains('active'));
+        assert.equal(get('pageTitle').textContent,'Calendar');
+        assert.equal(savedNav.attrs['aria-current'],'page');
+        get('reviewToCalendar').click();
+        assert(get('view-calendar').classList.contains('active'));
+        assert(!savedView.classList.contains('active'));
+        assert.equal(get('pageTitle').textContent,'Review & output');
+        assert.equal(savedNav.attrs['aria-current'],undefined);
+        assert.equal(nav.filter(item=>item.attrs['aria-current']==='page').length,1);
+    },
     mobile_open_close() {
         assert(sidebar.inert); assert.equal(get('mobileMenu').attrs['aria-expanded'], 'false');
         get('mobileMenu').click(); assert(!sidebar.inert); assert(main.inert); assert(sidebar.classList.contains('open'));

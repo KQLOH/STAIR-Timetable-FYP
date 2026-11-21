@@ -107,7 +107,7 @@ function applyReviewSnapshot(snapshot) {
     analysisController?.invalidate(null,true);
     renderHistoricalReviewEvidence();renderEverything();
     setText('savedReviewStatus',`Latest authorized saved reviews shown: ${state.events.filter(v=>STAIRUpload.humanCorrected(v.canonical)).length} human-corrected class(es). Independent verification and calendar approval are separate.`);
-    setText("processingStatus","Your saved class details are shown. Calendar preview uses these details; synchronization remains unavailable.");
+    setText("processingStatus",globalThis.STAIRAccountMode ? "Your saved class details are shown. Continue to Review & output to confirm dates and approve changes." : "Your saved class details are shown. Calendar preview uses these details; synchronization remains unavailable.");
     return true;
 }
 
@@ -298,7 +298,9 @@ function showView(viewName) {
             "Review events",
 
         calendar:
-            "Calendar",
+            globalThis.STAIRAccountMode ? "Review & output" : "Calendar",
+
+        "saved-calendar": "Calendar",
 
         history:
             "History"
@@ -1300,6 +1302,7 @@ function renderEverything() {
     renderReview();
 
     renderCalendar();
+    globalThis.STAIRAccount?.sourceChanged();
 }
 
 
@@ -1929,7 +1932,7 @@ function renderCalendar() {
         setText("calendarUndated","");grid.innerHTML='<p class="calendar-scope-note">No current revision preview is available.</p>';return;
     }
     const checks=typeof STAIRCalendarChecks==='undefined'?null:STAIRCalendarChecks.inspect(state.events);
-    setText("studentCalendarWarnings",checks ? `${checks.conflicts} overlapping class pair(s) · ${checks.duplicates} possible duplicate pair(s). Check uncertain dates, times and repeat schedules before planning. Calendar sync is unavailable.` : "");
+    setText("studentCalendarWarnings",globalThis.STAIRAccountMode ? "This view shows dates printed in the original source. Confirm class dates and repeat schedules above before synchronizing." : checks ? `${checks.conflicts} overlapping class pair(s) · ${checks.duplicates} possible duplicate pair(s). Check uncertain dates, times and repeat schedules before planning. Calendar sync is unavailable.` : "");
     const scope = loadedCalendarScope();
     if (!scope || calendarViewport?.key !== scope.key) calendarViewport = scope ? {key: scope.key, start: scope.first} : null;
     const first = calendarViewport?.start;

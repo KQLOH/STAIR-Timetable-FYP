@@ -36,7 +36,9 @@ class ReviewBridge:
 
 
 def _bridge(request):
-    bridge=getattr(request.app.state,'m5_review_bridge',None)
+    # Only the account host middleware may install this request-local bridge.
+    # Never change app.state to switch users: concurrent requests must stay isolated.
+    bridge=getattr(request.state,'student_review_bridge',None) or getattr(request.app.state,'m5_review_bridge',None)
     if not isinstance(bridge,ReviewBridge):
         raise HTTPException(403,'REVIEW_HOST_BOUNDARY_NOT_CONFIGURED')
     try:
@@ -47,6 +49,11 @@ def _bridge(request):
     origin=request.headers.get('origin')
     if origin is not None and origin not in bridge.allowed_origins:
         raise HTTPException(403,'REVIEW_ORIGIN_DENIED')
+    student_principal=getattr(request.state,'student_review_principal',None)
+    if student_principal is not None:
+        try: bridge.store.authority.require(student_principal,'read')
+        except ReviewError as exc: raise HTTPException(exc.status_code,exc.code) from None
+        return bridge.store,student_principal
     auth=request.headers.get('authorization','')
     if not auth.startswith('Bearer '): raise HTTPException(403,'UNAUTHORIZED_REVIEW')
     try:
@@ -255,6 +262,26 @@ async def verify_schedule_check(check_id:UUID,request:Request):
 async def analyze_schedule_check(check_id:UUID,request:Request):
     service,principal=_checks(request)
     return _redact(await _invoke(service.analyze,str(check_id),await _body(request,CheckAnalysis),principal))
+
+
+@router.post('/api/review/schedule-checks/{check_id}/grounded')
+async def grounded_schedule_check(check_id:UUID,request:Request):
+    from backend.analysis.schedule_checks import CheckGrounded
+    from backend.analysis.grounded import GroundedAnalyser
+    from backend.analysis.models import binding
+    service,principal=_checks(request)
+    body=await _body(request,CheckGrounded)
+    analysis,meta=await _invoke(service.prepare_analysis,str(check_id),body,principal)
+    engine=getattr(request.app.state,'m7_grounded_service',None) or GroundedAnalyser()
+    if not isinstance(engine,GroundedAnalyser):raise HTTPException(503,'GROUNDED_HOST_CONFIGURATION_INVALID')
+    result=await engine.run(analysis,service.authority,allow_provider=body.allow_provider)
+    current,current_meta=await _invoke(service.prepare_analysis,str(check_id),body,principal)
+    if binding(current)!=binding(analysis):
+        # Source/check state changed during a call: never expose the old free-time output.
+        result=await GroundedAnalyser().run(current,service.authority)
+        result['grounded']['reason']='SOURCE_CHANGED_DURING_GENERATION'
+    result['whole_schedule_check']=current_meta
+    return _redact(result)
 
 
 @router.get('/api/review/schedule-checks/for-task/{task_id}')

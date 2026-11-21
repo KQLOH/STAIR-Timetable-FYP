@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect Google Calendar · STAIR</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/student.css">
+<style>body{display:block;padding:24px;background:#f3f6fa;color:#172b44}main{max-width:850px;margin:auto}h1{font-size:2rem}li{margin:18px 0;line-height:1.7}pre{padding:16px;background:#edf2f7;white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}a{text-decoration:underline}p{line-height:1.7}</style></head>
+<body><main class="student-workflow"><p class="eyebrow">OPTIONAL GOOGLE CONNECTION</p><h1>Connect your test calendar</h1>
+<p>STAIR already has a local sandbox. These steps enable a separate Google test calendar. Connecting does not approve or send any classes.</p>
+<ol>
+<li><strong>Create a Google Cloud project and enable Calendar API.</strong> Open the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud console</a>. Select your project, open APIs &amp; Services → Library, find Google Calendar API and enable it.</li>
+<li><strong>Configure Google Auth Platform.</strong> Set your application name and contact details. For a personal Gmail account choose an External audience, keep the app in Testing, and add your own Google account as a test user. Follow your institution's restrictions if using a university account.</li>
+<li><strong>Create a Web application OAuth client.</strong> In Clients, choose <strong>Web application</strong>. Add this exact Authorized redirect URI:<pre>STAIR_CALLBACK_URL</pre>Use the address above, including the port and callback path. A Desktop app client is not used by this STAIR host.</li>
+<li><strong>Download the client JSON privately.</strong> Keep it outside the project folder, for example in Downloads. Do not paste its Client Secret into STAIR, chat, GitHub or screenshots.</li>
+<li><strong>Create a separate Google calendar.</strong> In <a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer">Google Calendar</a>, choose Other calendars → + → Create new calendar. Name it “STAIR FYP Test”. Open its Settings → Integrate calendar and copy its Calendar ID. Use this test calendar, not your primary calendar.</li>
+<li><strong>Check configuration without connecting.</strong> Stop your previous STAIR server in its own window. From the project folder, replace the example file path and calendar ID below:<pre>.venv/Scripts/python.exe -B tools/run_student_app.py --google-credentials "C:/Users/Asus/Downloads/your-client.json" --google-calendar-id "your-test-calendar-id" --check-google-config</pre>This only reads local configuration. It does not contact Google or print secrets.</li>
+<li><strong>Start STAIR with the same configuration.</strong> Remove <code>--check-google-config</code> and add <code>--open-browser</code>. Sign in to STAIR, open <strong>Review &amp; output</strong>, choose <strong>Connect Google Calendar</strong> and personally complete Google's authorization.</li>
+<li><strong>Preview before sending classes.</strong> Select your classes and dates, select the connected Google destination, then preview. Check the displayed target and changes, approve the preview and apply it. Open Google Calendar to inspect the result. If an outcome is uncertain, use <strong>Check saved result</strong>; do not repeatedly apply it.</li>
+</ol>
+<details><summary>Troubleshooting</summary><ul>
+<li><strong>redirect_uri_mismatch:</strong> compare the complete callback URI above with the Web client's Authorized redirect URIs. A different STAIR port needs its own exact callback entry.</li>
+<li><strong>Access blocked / app in testing:</strong> verify that the Google account is on your app's test-user list and that your organization permits the requested access.</li>
+<li><strong>Wrong calendar or read-only access:</strong> use a dedicated secondary calendar where you have owner or writer permission. STAIR checks this after authorization.</li>
+<li><strong>Strict FYP mode:</strong> registered-accept mode intentionally uses the local sandbox. Google is a separately configured personal application extension.</li>
+<li><strong>After restarting:</strong> connect Google again. OAuth tokens remain in server memory and are not saved to the repository.</li>
+</ul></details>
+<p>Standard Calendar API use currently has no additional charge within Google's stated limits; cloud hosting and AI analysis are separate services. See <a href="https://developers.google.com/workspace/calendar/api/guides/quota" target="_blank" rel="noopener noreferrer">Google's current limits and pricing</a>.</p>
+<p><a href="/">Back to STAIR</a></p></main></body></html>

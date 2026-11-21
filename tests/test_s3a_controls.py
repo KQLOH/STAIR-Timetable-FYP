@@ -54,7 +54,7 @@ def attach(case):
     setattr(S3aControlTests,'test_'+case,test)
 
 
-for case in ['mobile_open_close','menu_escape_outside_and_scroll_restore','mobile_navigation_and_invalid_target',
+for case in ['saved_calendar_separate_from_output','mobile_open_close','menu_escape_outside_and_scroll_restore','mobile_navigation_and_invalid_target',
     'menu_keyboard_trap','breakpoint_focus_and_state','settings_mobile_focus_return','settings_desktop_outside_and_resize',
     'login_escape_clears_password_and_traps_focus','dated_week_filtering_and_boundaries','empty_gap_and_undated_not_repeated',
     'unknown_dates_and_invalid_rollovers','scope_replacement_resets_view','source_week_bounds_and_conflicting_day','extreme_dates_and_safety_controls',

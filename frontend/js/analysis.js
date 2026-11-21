@@ -150,5 +150,24 @@
             } finally {clearTimeout(timer);}
         }
     }
-    global.STAIRAnalysis={packetFrom,render,renderStudent,renderObserved,Controller};
+    function renderGrounded(result,container) {
+        container.replaceChildren();line(container,'Checked study suggestions','h3');
+        const state=result.grounded;
+        if(state.status!=='VALIDATED'){
+            const reasons={INDEPENDENT_COMPLETE_SCHEDULE_REQUIRED:'An independent reviewer must check the entire timetable first.',
+                EXPLICIT_VALID_AVAILABILITY_REQUIRED:'Choose valid availability within the checked timetable range.',
+                APPROVED_PROVIDER_CONFIGURATION_REQUIRED:'AI analysis is not configured or approved on this computer. Local facts remain available.',
+                EXPLICIT_PROVIDER_CONSENT_REQUIRED:'Your permission is required before sending the minimized summary.',
+                COMPLETENESS_REVOKED_DURING_GENERATION:'The timetable verification expired or changed. Check it again.',
+                SOURCE_CHANGED_DURING_GENERATION:'The timetable changed while suggestions were being prepared.'};
+            line(container,reasons[state.reason]||'The provider response could not be validated. No AI suggestions are shown. Local facts remain available.');
+            if(result.completeness.trusted_complete){const total=result.facts.find(f=>f.type==='total_scope_workload_hours');if(total?.status==='COMPUTED')line(container,'Checked class hours: '+total.value);}
+            return;
+        }
+        if(state.output.no_window)line(container,'No suitable study window was found within your declared availability.');
+        for(const r of state.output.recommendations)line(container,r.start+' – '+r.end+' · '+r.explanation);
+        for(const f of state.output.claims)line(container,f.type.replaceAll('_',' ')+': '+JSON.stringify(f.value));
+        line(container,'Optional suggestions based on the checked timetable. This is operational output, not a completed research evaluation.');
+    }
+    global.STAIRAnalysis={packetFrom,render,renderStudent,renderObserved,renderGrounded,Controller};
 })(typeof window!=="undefined"?window:globalThis);

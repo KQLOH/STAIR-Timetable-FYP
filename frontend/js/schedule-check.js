@@ -6,6 +6,7 @@ class Controller {
  constructor(options){Object.assign(this,options);this.check=null;this.generation=0;this.sourceSignature=null;this.memory=new Map();this.clientIDs=new Map();this.dirty=false;this.editSequence=0;this.recoveryStatus="";}
  setup(){
   for(const [id,fn] of [['scheduleStart',()=>this.start()],['scheduleRestore',()=>this.restore()],['scheduleAnalyze',()=>this.analyze()],['scheduleSource',()=>this.source()]])el(id)?.addEventListener('click',()=>this.action(fn));
+  el('scheduleGrounded')?.addEventListener('click',()=>this.action(()=>this.grounded()));
   el('scheduleCheckBody')?.addEventListener('input',()=>this.edited());el('scheduleCheckBody')?.addEventListener('change',()=>this.edited());
   g.addEventListener('beforeunload',event=>{if(this.dirty){event.preventDefault();event.returnValue='';}});
   document.addEventListener('stair-review-update',()=>this.syncReviewState());
@@ -26,6 +27,7 @@ class Controller {
  }
  syncReviewState(){
   const access=this.accessState(),packet=this.getSource()?.packet,signature=this.packetSignature(packet);
+  if(access!=='CONNECTED'||this.sourceSignature!==signature){el('groundedAnalysisResult')?.replaceChildren();if(el('scheduleAIConsent'))el('scheduleAIConsent').checked=false;}
   if(access!=='CONNECTED'){
    if(this.check){this.remember();clearTimeout(this.draftTimer);this.generation++;this.check=null;this.dirty=false;if(this.sourceURL)URL.revokeObjectURL(this.sourceURL);el('scheduleOriginal')?.replaceChildren();el('scheduleCheckBody')?.replaceChildren();}
    const messages={DISCONNECTED:'Editing access is not connected. Reconnect the saved review to open its private checklist.',EXPIRED:'Editing access expired. Your encrypted draft is retained; reconnect this source.',NO_SOURCE:'Editing access is connected. Open the matching timetable first.',WRONG_SOURCE:'Editing access is connected to a different source. Select its matching original or request access for this timetable.',READ_ONLY:'Saved review access is connected but read-only. Whole-source checking requires the source owner’s review permissions.'};this.status(messages[access]);return;
@@ -176,7 +178,7 @@ class Controller {
  captureForm(){if(!this.check||!this.rows)return null;return {rows:[...this.rows.children].map(row=>row.readDraft()),checked_pages:[...this.pageBoxes.querySelectorAll('input:checked')].map(x=>Number(x.value)),source_confirmed:this.sourceBox.checked,scope_confirmed:this.scopeBox.checked,note:this.noteBox.value,extra:this.captureExtraDraft?.()||null};}
  remember(){if(!this.check||!this.dirty)return;const form=this.captureForm();if(form)this.memory.set(this.check.check_id,{form,actor:this.actor,version:this.check.version,source:this.check.source_revision_digest});}
  updateDraftStatus(){if(!this.notice||!this.check)return;this.notice.textContent=this.dirty?'Unsaved draft'+(this.recoveryStatus?' — '+this.recoveryStatus:' — not a saved source check or verification'):this.check.current_complete_verification?'Independently verified source check':this.check.primary?'Saved source check — '+(this.check.status==='DRAFT'?'context requires rechecking':'not independently verified'):'Unsaved draft — no source check has been saved';}
- edited(){if(!this.check)return;this.dirty=true;this.editSequence++;this.remember();this.updateDraftStatus();clearTimeout(this.draftTimer);this.draftTimer=setTimeout(()=>this.flushDraft(),500);}
+ edited(){el('groundedAnalysisResult')?.replaceChildren();if(el('scheduleAIConsent'))el('scheduleAIConsent').checked=false;if(!this.check)return;this.dirty=true;this.editSequence++;this.remember();this.updateDraftStatus();clearTimeout(this.draftTimer);this.draftTimer=setTimeout(()=>this.flushDraft(),500);}
  clientId(){const key='stair-source-draft-client:'+this.check.check_id;if(!this.clientIDs.has(key)){let id;try{id=sessionStorage.getItem(key);}catch{}id=id||crypto.randomUUID();this.clientIDs.set(key,id);try{sessionStorage.setItem(key,id);}catch{}}return this.clientIDs.get(key);}
  async flushDraft(){
   clearTimeout(this.draftTimer);if(!this.check||!this.dirty||this.saving)return true;if(this.stale)return false;
@@ -214,6 +216,20 @@ class Controller {
   try{const result=await this.request('POST',check.check_id+'/primary',body);const newer=this.editSequence!==sequence||JSON.stringify(this.captureExtraDraft?.()||null)!==this.extraBaseline?this.captureForm():null;this.check=result;this.memory.delete(check.check_id);this.render();if(newer){this.applyDraft(newer);this.status('The submitted version was saved. Your newer edits are retained as an unsaved draft.');}else this.status('Source check saved on this computer. This is not independent verification.');}
   catch(error){this.remember();this.showErrors(error);}
   finally{this.saving=false;if(el('saveSourceCheck'))el('saveSourceCheck').disabled=false;if(this.dirty)this.flushDraft();}
+ }
+ async grounded(){
+  if(this.dirty)throw Error('Save or resolve your source-check edits first.');
+  if(!this.check)throw Error('Start or reopen a whole-timetable check first.');
+  const start=el('studyStart').value,end=el('studyEnd').value;
+  if(!start||!end)throw Error('Enter your availability start and end first.');
+  if(!el('scheduleAIConsent').checked)throw Error('Read and check the provider consent before requesting AI suggestions.');
+  const control=el('scheduleGrounded'),sequence=this.editSequence;control.disabled=true;
+  el('groundedAnalysisResult').textContent='Checking the complete timetable and preparing suggestions…';
+  try{
+   const result=await this.request('POST',this.check.check_id+'/grounded',{availability:[{start,end}],allow_provider:true});
+   if(this.dirty||sequence!==this.editSequence){el('groundedAnalysisResult').textContent='The checklist changed. Save it and request fresh suggestions.';return;}
+   STAIRAnalysis.renderGrounded(result,el('groundedAnalysisResult'));
+  }finally{control.disabled=false;el('scheduleAIConsent').checked=false;}
  }
  async analyze(){if(this.dirty)throw Error('Save or resolve your unsaved source-check edits before analyzing the checked schedule. Draft edits are not part of the saved verification.');if(!this.check)throw Error('Start or reopen your source check first.');const start=el('studyStart').value,end=el('studyEnd').value;if(!!start!==!!end)throw Error('Supply both availability dates, or leave both empty.');const result=await this.request('POST',this.check.check_id+'/analyze',{availability:start?[{start,end}]:[]});STAIRAnalysis.renderStudent(result,el('verifiedAnalysisResult')||el('analysisResult'));}
 }

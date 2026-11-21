@@ -19,9 +19,13 @@ def main():
         default=user_local_root() / 'STAIR' / 'StudentReview')
     parser.add_argument('--operating-point',type=Path,help='Private approved PRE-01/02/03 bootstrap manifest; never an HTTP registration')
     parser.add_argument('--operating-approval-sha256',help='Explicit trusted approval-artifact SHA-256, supplied by the operator')
+    parser.add_argument('--analysis-provider',type=Path)
+    parser.add_argument('--analysis-provider-approval-sha256')
     args = parser.parse_args()
     if bool(args.operating_point)!=bool(args.operating_approval_sha256):
         parser.error('Operating point and explicitly trusted approval hash are required together.')
+    if bool(args.analysis_provider)!=bool(args.analysis_provider_approval_sha256):
+        parser.error('Analysis provider and its explicit approval hash are required together.')
     if not sys.stdin.isatty():
         raise SystemExit('An interactive Windows console is required; no automatic grant is issued.')
     registry=None
@@ -31,6 +35,12 @@ def main():
         except (ValueError,OSError,KeyError,TypeError):
             raise SystemExit('OPERATING_POINT_NOT_APPROVED_OR_FREEZE_INVALID; no ACCEPT host was started.') from None
     app, host = build_local_app(args.storage,registry=registry)
+    if args.analysis_provider:
+        from backend.analysis.provider import CompatibleProvider
+        from backend.analysis.grounded import GroundedAnalyser
+        try:app.state.m7_grounded_service=GroundedAnalyser(CompatibleProvider(args.analysis_provider,args.analysis_provider_approval_sha256))
+        except (OSError,ValueError,TypeError):
+            raise SystemExit('ANALYSIS_PROVIDER_NOT_APPROVED_OR_INVALID; no server was started.') from None
     server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=8020, access_log=False))
     worker = Thread(target=server.run, daemon=True); worker.start()
     print('STAIR local Windows-session review: ' + ORIGIN)

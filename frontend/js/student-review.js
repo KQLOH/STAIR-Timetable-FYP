@@ -48,7 +48,7 @@
             if(!this.review.session) {
                 $('studentValue').value='';$('studentReason').value='';$('studentConfirmed').checked=false;
                 $('studentEvidence').replaceChildren();$('studentCrop').replaceChildren();
-                this.message('To save changes, open the local Windows review app, request access to this timetable and confirm the request in its console. Saved corrections stay private on your computer.');
+                this.message(global.STAIRAccountMode ? 'Sign in and upload your timetable to edit. Editing access connects automatically after reading the file.' : 'To save changes, open the local Windows review app, request access to this timetable and confirm the request in its console. Saved corrections stay private on your computer.');
             }
         }
         async open(candidateId) {
@@ -56,7 +56,7 @@
             if(this.dirty() && !global.confirm('Discard the unsaved edit and select another class?'))return;
             const sequence=++this.openSequence, source=this.getSource().packet;
             this.candidateId=candidateId;this.openSource=source?.source;this.review.openDialog();
-            $('studentFeedback').textContent='Opening classÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦';$('studentReason').value='';$('studentConfirmed').checked=false;
+            $('studentFeedback').textContent='Opening class…';$('studentReason').value='';$('studentConfirmed').checked=false;
             $('studentValue').value='';$('studentEvidence').replaceChildren();$('studentCrop').replaceChildren();
             const event=source?.events.find(e=>e.candidate_id===candidateId);
             $('studentTitle').textContent=event?.revision.content.course_code || event?.revision.content.course_name || 'Selected class';
@@ -137,7 +137,7 @@
                 await this.review.refreshSnapshot();
                 await this.review.revalidate();
                 if(this.review.task?.state!=='REVALIDATED')throw Error('The saved class still needs its follow-up check.');
-                this.message('Correction saved on this computer. Check the updated calendar preview. Calendar sync remains unavailable; review does not approve external writes.');
+                this.message(global.STAIRAccountMode ? 'Correction saved and checked. Open Calendar to confirm the updated dates and preview your changes before synchronizing.' : 'Correction saved on this computer. Check the updated calendar preview. Calendar sync remains unavailable; review does not approve external writes.');
             } catch(error) {
                 if(submitted && !error.status && !confirmed)this.review.uncertain=true;
                 if(error.status===403)this.review.forget();

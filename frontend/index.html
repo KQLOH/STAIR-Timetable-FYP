@@ -254,6 +254,12 @@
           <div class="schedule-source-grid"><div id="scheduleOriginal"></div><div id="scheduleCheckBody"></div></div>
           <div class="analysis-controls"><label>Your availability starts <input type="datetime-local" id="studyStart"></label><label>Ends <input type="datetime-local" id="studyEnd"></label></div>
           <button type="button" class="button secondary" id="scheduleAnalyze">Analyze checked schedule</button>
+          <details class="student-technical"><summary>Optional AI study suggestions</summary>
+            <p>Requires an independently checked complete timetable and an approved provider configured by the project owner. Only a minimized summary and time windows are sent; the original timetable is not sent.</p>
+            <label><input type="checkbox" id="scheduleAIConsent"> I agree to send the minimized summary to the configured analysis provider for this request.</label>
+            <button type="button" class="button secondary" id="scheduleGrounded">Get checked AI suggestions</button>
+            <div id="groundedAnalysisResult" class="analysis-result" aria-live="polite"></div>
+          </details>
           <div id="verifiedAnalysisResult" class="analysis-result" aria-live="polite"></div>
         </section>
         </details>

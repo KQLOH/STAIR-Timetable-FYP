@@ -1,0 +1,55 @@
+/* Account workflow extends the existing STAIR visual language. */
+.student-auth {width:min(460px,calc(100% - 32px));border:0;border-radius:20px;padding:32px;box-shadow:0 24px 90px #10263f40;color:#10263f}
+.student-auth::backdrop {background:#10263fe6;backdrop-filter:blur(7px)}
+.student-auth h2 {font-size:1.8rem;margin:10px 0}
+.student-auth p,.student-workflow p {line-height:1.6}
+.student-auth form,.student-schedule-form {display:grid;gap:16px}
+.student-auth label,.student-schedule-form label {display:grid;gap:7px;font-size:1rem;font-weight:600}
+.student-auth input,.student-schedule-form input,.student-schedule-form select,.student-schedule-form textarea,.student-target select {width:100%;padding:11px 12px;border:1px solid #abb8c8;border-radius:8px;font:inherit;background:white;color:#10263f}
+.student-auth .button {width:100%;justify-content:center;min-height:46px}
+.student-auth .student-auth-error {color:#a32925;min-height:1.5em;margin:0}
+.student-auth .student-auth-note {font-size:.9rem;color:#526476}
+.student-workflow {padding:24px;margin:0 0 24px;border:1px solid #d3dfeb;border-radius:16px;background:#fff}
+.student-workflow h3 {font-size:1.35rem;margin:0 0 8px}
+.student-workflow h4 {font-size:1.1rem;margin:20px 0 8px}
+.student-actions {display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
+.student-actions .button {min-height:42px}
+.student-steps {display:flex;flex-wrap:wrap;gap:10px;padding:0;list-style:none;counter-reset:step}
+.student-steps li {padding:10px 14px;background:#eef4fa;border-radius:9px;font-size:.95rem}
+.student-steps li::before {counter-increment:step;content:counter(step) '. ';font-weight:700}
+.student-status {padding:12px 16px;border-radius:8px;background:#eef4fa;line-height:1.6;overflow-wrap:anywhere}
+.student-status.error {background:#fff0ed;color:#972620}
+.student-status.success {background:#eaf7ef;color:#1e6540}
+.student-account-bar {display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.student-account-bar strong {overflow-wrap:anywhere;max-width:180px}
+.student-class-list {display:grid;gap:12px;margin-top:16px}
+.student-class-row {display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start;border:1px solid #d3dfeb;border-radius:10px;padding:16px}
+.student-class-row input[type=checkbox],.student-check input {width:20px;height:20px;flex:none;margin:2px 0;accent-color:#2469b5}
+.student-class-row small {display:block;margin-top:6px;font-size:.9rem;color:#526476}
+.student-class-row button {white-space:normal;text-align:left}
+.student-check {display:flex;align-items:flex-start;gap:10px;font-size:1rem;line-height:1.5;margin:14px 0}
+.student-schedule-dialog {width:min(560px,calc(100% - 24px));max-height:90vh;overflow:auto;border:0;border-radius:16px;padding:26px;color:#10263f}
+.student-schedule-dialog::backdrop {background:#10263fa8}
+.student-schedule-dialog header {display:flex;justify-content:space-between;gap:12px;margin-bottom:20px}
+.student-schedule-dialog h3 {margin:0;font-size:1.35rem}
+.student-date-grid {display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.student-batch-form {margin-top:24px;padding:20px;background:#f3f7fb;border:1px solid #d3dfeb;border-radius:12px;max-width:760px}
+.student-batch-form h4,.student-batch-form p {margin:0}
+.student-batch-form [hidden] {display:none}
+.student-batch-form .student-check {display:flex;font-weight:400}
+.student-missing-date {display:grid;gap:6px;margin-top:12px;font-size:.9rem;max-width:290px}
+.student-missing-date input {padding:8px;border:1px solid #abb8c8;border-radius:8px;font:inherit;color:#10263f;background:white}
+#studentBatchProblems {line-height:1.6}
+.student-plan-list {list-style:none;padding:0;display:grid;gap:10px;max-height:440px;overflow:auto}
+.student-plan-list li {border-left:4px solid #3d78b4;padding:12px 16px;background:#f2f6fb;border-radius:5px;line-height:1.6}
+.student-plan-list .plan-before {font-size:.9rem;color:#526476;display:block}
+.student-plan-tag {font-weight:700;display:block}
+.student-saved-list {display:flex;gap:8px;flex-wrap:wrap}
+.student-target {display:grid;gap:8px;max-width:420px;margin-top:20px}
+.student-technical {margin-top:18px;padding-top:14px;border-top:1px solid #d3dfeb}
+.student-technical pre {max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem}
+.student-technical summary {cursor:pointer;padding:8px 0;font-weight:600}
+.student-account-host .calendar-limitations,.student-account-host #sandboxWorkflow,.student-account-host .sync-panel,.student-account-host .safe-pill {display:none}
+.student-account-host #accountReviewPanel {margin-bottom:24px}
+.student-workflow button:focus-visible,.student-auth input:focus-visible,.student-schedule-form input:focus-visible {outline:3px solid #3a86d7;outline-offset:3px}
+@media(max-width:640px) {.student-workflow{padding:16px}.student-class-row{grid-template-columns:auto 1fr}.student-class-row>.student-actions{grid-column:2;margin:0}.student-date-grid{grid-template-columns:1fr}.student-auth{padding:24px}.student-actions .button{flex:1 1 auto}}

@@ -3,6 +3,18 @@
 Schema-and Temporal-Consistency-Aware Timetable for Safe Calendar Synchronisation.
 A Software Engineering FYP prototype with a FastAPI backend and HTML/CSS/JavaScript frontend.
 
+## Student account application
+
+After installing the existing dependencies below, double-click **[Start STAIR.cmd](Start%20STAIR.cmd)**, or run `.venv\Scripts\python.exe -B tools/run_student_app.py`. Open **http://127.0.0.1:8020**. Create a STAIR account, upload/paste your timetable, check or correct classes, confirm dates and repeat schedules, then preview, approve and apply changes to your private local test calendar. Ordinary students no longer need console authorization commands in this mode.
+
+This additive account host includes per-account encrypted history, revision-bound synchronization plans, JSON export/reference comparison, personal completeness checks and optional OAuth for a configured secondary Google test calendar. It remains a local FYP application. Registered ACCEPT and independently verified analysis still require their genuine research evidence; personal confirmation does not establish them. See the **[student workflow, Google setup and limitations](docs/student-account-workflow.md)**. The older operator modes documented below remain available separately.
+
+For the account-local strict FR5/FR6 bridge, start the same launcher with `--calendar-policy registered-accept`. This policy accepts only current AUTHENTIC registry receipts and source-supported dates, with separate preview approval. Missing approved evidence blocks output; the default personal sandbox is not automatically promoted. See [strict output requirements](docs/student-account-workflow.md#strict-registered-accept-output). Registered FR7/P1-A and formal research evaluation remain incomplete.
+
+Operational FR7 now includes an opt-in minimized provider interface, structured fact/window post-checks and facts-only fallback. Approved source context can also supply teaching weeks and replacement dates to strict output. Neither feature fabricates approval or enables registered experiments; see [configuration, privacy and acceptance boundaries](docs/grounded-analysis.md).
+
+Optional Google setup: open **Review & output → Google setup guide**. The launcher accepts `--google-credentials` (a downloaded Web OAuth JSON outside Git), `--google-calendar-id` (a secondary test calendar) and `--check-google-config` for offline validation. No real Google account is configured by the repository and no write occurs from connecting alone. See [Google setup and acceptance](docs/student-account-workflow.md#optional-google-test-calendar).
+
 The working system provides timetable extraction, source-linked class review, explicit human corrections, revision tracking, revalidation and a read-only calendar preview. The optional Windows review host authenticates the local Windows account and requires console consent for the exact uploaded file. It stores review history locally using user-scope DPAPI encryption.
 
 Use the working-system checkpoint branch below. The project owner controls publication; setup details are in [the setup guide](docs/setup.md).

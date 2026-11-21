@@ -55,6 +55,10 @@ class CheckAnalysis(ContractModel):
     availability:tuple[LocalAvailability,...]=Field(default=(),max_length=100)
 
 
+class CheckGrounded(CheckAnalysis):
+    allow_provider:bool=False
+
+
 class ScheduleChecks:
     def __init__(self,store,journal_factory,manifest_lookup):
         self.store,self.journal_factory,self.manifest_lookup=store,journal_factory,manifest_lookup
@@ -378,7 +382,7 @@ class ScheduleChecks:
                 raise ReviewError('SOURCE_PAGE_PREVIEW_UNAVAILABLE',422)
             return {'page':page,'page_count':manifest['page_count'],'content_sha256':packet.source.content_sha256,'png_base64':base64.b64encode(result.stdout).decode('ascii')}
 
-    def analyze(self,check_id,body,principal):
+    def prepare_analysis(self,check_id,body,principal):
         from zoneinfo import ZoneInfo
         journal=self._transaction()
         with self.lock,self.store._lock,journal.locked():
@@ -390,6 +394,10 @@ class ScheduleChecks:
             verification=check['verification'];request=self._request(check,snap,packet,verification,tuple(availability))
             saved=self._live_token(check_id)
             if saved:request=request.model_copy(update={'attestation_id':saved[0]})
-            result=student_analyze(request,self.authority)
-            result['whole_schedule_check']={'status':check['status'],'scope_bound':True,'independent_reauthorization_required':bool(verification and not saved)}
-            return result
+            return request,{'status':check['status'],'scope_bound':True,'independent_reauthorization_required':bool(verification and not saved)}
+
+    def analyze(self,check_id,body,principal):
+        request,meta=self.prepare_analysis(check_id,body,principal)
+        result=student_analyze(request,self.authority)
+        result['whole_schedule_check']=meta
+        return result

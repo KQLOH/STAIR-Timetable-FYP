@@ -307,6 +307,7 @@ class ReviewStore:
             issues=tuple(issue if issue.candidate_id in visible_ids else issue.model_copy(update={'candidate_id':None}) for issue in source_issues)
             packet=CanonicalTimetable(source=self._source(task.view.run_id),evidence=run.evidence,events=events,issues=issues)
             return {'packet':packet.model_dump(mode='json'),'reconstruction_context':run.context.model_dump(mode='json') if run.context else {},
+                'reconstruction_status':run.snapshot.search_status,
                 'tasks':[v.model_dump(mode='json') for v in visible],
                 'scope':'AUTHORIZED_VISIBLE_TASKS_ONLY','complete_schedule_verified':False,
                 'dependency_digest':self._dependency(run) if run.context else None,'storage':self.storage_kind}
