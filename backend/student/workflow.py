@@ -93,7 +93,7 @@ def current_tasks(accounts, session):
         return store, []
     tasks, offset = [], 0
     while True:
-        page = store.queue_summary(session.principal, offset, 100)
+        page = store.queue_summary(session.principal, offset, 100, include_source=True)
         tasks.extend(page['tasks'])
         offset = page['next_offset']
         if offset is None:

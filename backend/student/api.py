@@ -252,8 +252,6 @@ def create_student_app(accounts, *, origin='http://127.0.0.1:8020', google_facto
     def workspace(request: Request):
         session = request.state.student_session
         store, tasks = workflow.current_tasks(accounts, session)
-        for task in tasks:
-            task['source_sha256'] = store.source(task['task_id'], session.principal).content_sha256
         with accounts.transaction() as state:
             data = state['workspaces'][session.user_id]
             by_task = {task['task_id']: task for task in tasks}

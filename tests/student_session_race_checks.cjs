@@ -7,7 +7,7 @@ function fixture(){
   document:{body:{classList:{add(){}}},readyState:'loading',addEventListener(){},getElementById(id){if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)}},
   fetch:()=>new Promise(resolve=>{reply=resolve})};
  environment.window=environment;environment.__clears=0;
- const probe="clearSession=()=>{window.__clears++;generation++;user=null;csrf='';};window.__qa={assign(name,version){user={username:name};generation=version;csrf='synthetic-'+version;},current(){return user?.username;}};\n";
+ const probe="clearSession=()=>{window.__clears++;generation++;user=null;csrf='';};window.__qa={assign(name,version){user={id:name,username:name};generation=version;csrf='synthetic-'+version;},current(){return user?.username;}};\n";
  vm.runInNewContext(source.replace('window.STAIRAccount={sourceChanged()',probe+'window.STAIRAccount={sourceChanged()'),environment);
  return {environment,reply:response=>reply(response)};
 }
@@ -22,6 +22,14 @@ function fixture(){
  const f=fixture(),e=f.environment;e.__qa.assign('synthetic-current',0);
  const pending=e.fetch('/api/student/workspace');f.reply({status:401,ok:false});
  assert.equal((await pending).status,401);assert.equal(e.__clears,1);assert.equal(e.__qa.current(),undefined);
+ for(const valid of [true,false]){
+  const scope=fixture(),env=scope.environment;env.__qa.assign('synthetic-current',0);
+  const request=env.fetch('/api/intranet/timetable');scope.reply({status:401,ok:false});
+  await new Promise(setImmediate);
+  scope.reply(valid?{status:200,ok:true,json:async()=>({user:{id:'synthetic-current'},csrf:'synthetic-0'})}:{status:401,ok:false});
+  assert.equal((await request).status,401);
+  assert.equal(env.__clears,valid?0:1,'Institutional expiry must check real account authentication before clearing it.');
+ }
  const fields=new Map(),shell={inert:false};
  const field=id=>{if(!fields.has(id))fields.set(id,{value:'',checked:true,open:false,replaceChildren(){},focus(){},showModal(){this.open=true},querySelectorAll(){return []}});return fields.get(id)};
  const isolated={URL,Headers,Request,URLSearchParams,console,queueMicrotask,

@@ -156,6 +156,13 @@ class Accounts:
             bindings = state['workspaces'][session.user_id]['sources']
         if bindings:
             if session.principal:
+                try:
+                    store.authority.require(session.principal,'read')
+                    if (session.principal.actor_id == 'student:' + session.user_id and
+                            session.principal.source_bindings == frozenset(map(tuple,bindings))):
+                        return store
+                except ReviewError:
+                    pass
                 store.authority.revoke(session.principal)
             session.principal, _ = store.authority.issue(
                 'student:' + session.user_id, PERMISSIONS, source_bindings=bindings,

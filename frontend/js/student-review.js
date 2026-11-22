@@ -40,7 +40,7 @@
             global.document.addEventListener('stair-review-update',()=>this.controls());
         }
         dirty() {return !!($('studentReason').value || $('studentConfirmed').checked || (this.initialValue!==undefined && $('studentValue').value!==this.initialValue));}
-        sameSource() {const source=this.getSource().packet?.source;return !!source && source.source_document_id===this.review.capture?.source_document_id && source.content_sha256===this.review.capture?.content_sha256;}
+        sameSource() {const source=this.getSource().packet?.source;return !!source && (!global.STAIRAccountMode || (!!this.openRunId && this.openRunId===this.review.selectedRunId && this.review.task?.run_id===this.openRunId)) && source.source_document_id===this.review.capture?.source_document_id && source.content_sha256===this.review.capture?.content_sha256;}
         message(message) {$('studentFeedback').textContent=message;}
         controls() {
             $('studentSave').disabled=this.saving || !this.review.canCorrect() || !this.sameSource();
@@ -55,7 +55,7 @@
             if(this.saving || this.review.busy)return;
             if(this.dirty() && !global.confirm('Discard the unsaved edit and select another class?'))return;
             const sequence=++this.openSequence, source=this.getSource().packet;
-            this.candidateId=candidateId;this.openSource=source?.source;this.review.openDialog();
+            this.candidateId=candidateId;this.openSource=source?.source;this.openRunId=this.review.selectedRunId;this.review.openDialog();
             $('studentFeedback').textContent='Opening class…';$('studentReason').value='';$('studentConfirmed').checked=false;
             $('studentValue').value='';$('studentEvidence').replaceChildren();$('studentCrop').replaceChildren();
             const event=source?.events.find(e=>e.candidate_id===candidateId);
@@ -69,9 +69,10 @@
                 if(!this.review.session.source_bindings?.some(([id,hash])=>id===binding.source_document_id && hash===binding.content_sha256))throw Error('Request fresh access for this timetable before editing.');
                 let tasks=[],offset=0;
                 do {const page=await this.review.request('GET',`/api/review/queue?offset=${offset}&limit=50`);tasks.push(...page.tasks);offset=page.next_offset;}while(offset!=null && tasks.length<500);
-                const matches=t=>t.current_event?.candidate_id===candidateId && t.current_event.revision.source_document_id===binding.source_document_id;
+                const matches=t=>(!global.STAIRAccountMode || (!!this.openRunId && t.run_id===this.openRunId)) && t.current_event?.candidate_id===candidateId && t.current_event.revision.source_document_id===binding.source_document_id;
                 if(offset!=null)throw Error('There are too many saved classes to match safely. Use Advanced Details to find this class.');
                 let candidates=tasks.filter(matches);
+                if(!candidates.length && global.STAIRAccountMode)throw Error('This reading is still connecting. Close Edit class and try again when editing is ready.');
                 if(!candidates.length) {
                     await this.review.request('POST','/api/review/ingest',global.STAIRUpload.reviewIngestBody(this.getSource().result));
                     const page=await this.review.request('GET','/api/review/queue?offset=0&limit=50');

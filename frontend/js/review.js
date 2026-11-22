@@ -236,10 +236,12 @@
         async restoreSavedSource() {
             const current=this.getSource(),packet=current?.packet,result=current?.result,session=this.session;
             if(!packet || result?.busy || !this.permitted('read'))return {status:'NOT_AUTHORIZED',matched:0};
+            if(global.STAIRAccountMode && !this.selectedRunId)return {status:'WAITING_FOR_RUN',matched:0};
+            const selectedRun=this.selectedRunId;
             const source=packet.source, identities=new Set(packet.events.map(global.STAIRUpload.eventIdentity).filter(Boolean));
             if(!session.source_bindings.some(([id,hash])=>id===source.source_document_id && hash===source.content_sha256))return {status:'WRONG_SCOPE',matched:0};
             const generation=this.generation;
-            const stillCurrent=()=>generation===this.generation && this.session===session && this.getSource()?.result===result && sourceKey(this.getSource()?.packet?.source)===sourceKey(source);
+            const stillCurrent=()=>selectedRun===this.selectedRunId && generation===this.generation && this.session===session && this.getSource()?.result===result && sourceKey(this.getSource()?.packet?.source)===sourceKey(source);
             let outcome={status:'UNAVAILABLE',matched:0};
             await this.action(async()=>{
                 let offset=0,rows=[];
@@ -251,7 +253,7 @@
                 }while(offset!=null && rows.length<500);
                 if(offset!=null)throw Error('Too many saved tasks to match safely. Inspect Advanced Details.');
                 const runs=new Map();
-                for(const row of rows)if(row.current_event?.revision.source_document_id===source.source_document_id && !runs.has(row.run_id))runs.set(row.run_id,row);
+                for(const row of rows)if(row.current_event?.revision.source_document_id===source.source_document_id && (!global.STAIRAccountMode || row.run_id===selectedRun) && !runs.has(row.run_id))runs.set(row.run_id,row);
                 const matches=[];let exactSource=false;
                 for(const row of runs.values()) {
                     const snapshot=await this.request('GET',`/api/review/tasks/${row.task_id}/snapshot`);

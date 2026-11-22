@@ -17,7 +17,7 @@
     let csrf='', user=null, workspace=null, connectedKey='', connecting=false, pendingSource=false;
     let currentPlan=null, selected=new Set(), comparison=null, generation=0, lastSignature='', lastCaptureKey='', planGeneration=0;
     let batchDefaultsKey='', batchProblems=new Map(), dateOverrides=new Map();
-    let sandboxCalendar=null;
+    let sandboxCalendar=null, activeRunId=null, connectedResult=null;
     const className = task => {
         const c=task.current_event?.revision.content;
         return c ? [c.course_code,c.course_name,c.session_type].filter(Boolean).join(' · ') : 'Unread class';
@@ -36,6 +36,7 @@
     function clearSession() {
         csrf='';user=null;workspace=null;connectedKey='';selected.clear();currentPlan=null;comparison=null;generation++;
         batchDefaultsKey='';batchProblems.clear();dateOverrides.clear();
+        activeRunId=null;connectedResult=null;reviewController.selectedRunId=null;
         sandboxCalendar?.reset();
         reviewController?.forget();
         if(typeof uploadController!=='undefined')uploadController.cancel({notify:false});
@@ -72,6 +73,16 @@
                 cancelled.name='AbortError';throw cancelled;
             }
             if(response.status===401 && user && !authenticationRequest) {
+                if(target.pathname.startsWith('/api/intranet/')) {
+                    // An institutional expiry is not an expiry of the STAIR account.
+                    let accountStillValid=false;
+                    try {
+                        const check=await nativeFetch(location.origin+'/api/student/session',{credentials:'same-origin',cache:'no-store',redirect:'error'});
+                        if(check.ok){const current=await check.json();accountStillValid=!!current.user?.id && current.user.id===user?.id && current.csrf===csrf;}
+                    }catch(_){}
+                    if(requestGeneration!==generation){const cancelled=new Error('Your sign-in changed.');cancelled.name='AbortError';throw cancelled;}
+                    if(accountStillValid)return response;
+                }
                 clearSession();$('studentLoginMessage').textContent='Your session ended. Sign in again to continue.';
             }
             return response;
@@ -256,8 +267,17 @@
     }
     function activeTasks() {
         const capture=reviewSource().packet?.source;
-        if(!capture)return [];
-        return (workspace?.tasks || []).filter(t=>t.current_event?.revision.source_document_id===capture.source_document_id && t.source_sha256===capture.content_sha256);
+        if(!capture || !activeRunId)return [];
+        const identities=new Set((reviewSource().packet?.events || []).map(STAIRUpload.eventIdentity).filter(Boolean));
+        const runs=new Map();
+        for(const task of workspace?.tasks || []) {
+            if(task.current_event?.revision.source_document_id!==capture.source_document_id || task.source_sha256!==capture.content_sha256)continue;
+            if(!runs.has(task.run_id))runs.set(task.run_id,[]);
+            runs.get(task.run_id).push(task);
+        }
+        const matching=[...runs.entries()].filter(([id,tasks])=>(!activeRunId || id===activeRunId) && tasks.length===identities.size && tasks.every(t=>identities.has(STAIRUpload.eventIdentity(t.current_event)))).map(([,tasks])=>tasks);
+        // Never combine separate saved readings, including partially matching runs.
+        return matching.length===1?matching[0]:[];
     }
     async function ready() {
         const expected=generation;
@@ -347,17 +367,25 @@
     }
     function renderSaved() {
         const list=$('accountSavedSources');list.replaceChildren();const sources=new Map();
-        for(const task of workspace.tasks){if(!task.current_event)continue;const id=task.current_event.revision.source_document_id+':'+task.source_sha256;if(!sources.has(id))sources.set(id,[]);sources.get(id).push(task);}
-        for(const [id,tasks] of sources)list.append(button('Open '+(tasks[0].current_event.revision.content.course_code || 'saved timetable')+' · '+tasks.length+(tasks.length===1?' class':' classes'),()=>openSavedTimetable(tasks[0].task_id)));
+        for(const task of workspace.tasks){if(!task.current_event)continue;const id=task.run_id;if(!sources.has(id))sources.set(id,[]);sources.get(id).push(task);}
+        let version=0;
+        for(const [id,tasks] of sources){version++;const saved=new Date(tasks[0].created_at).toLocaleString('en-GB'),profile=tasks[0].extraction_profile || '',route=tasks[0].source_route,type=profile.includes('s2b')?'Colored':profile.includes('s2a')?'Grid':route==='tarumt_html'?'TAR UMT':route==='native_pdf'?'PDF':route==='text'?'Copied text':'General';list.append(button('Open saved version '+version+' '+type+' · '+tasks.length+(tasks.length===1?' class':' classes')+' · '+saved+(id===activeRunId?' · Current':''),()=>openSavedTimetable(tasks[0].task_id)));}
     }
     async function openSavedTimetable(taskId) {
         if(state.upload?.busy)throw Error('Wait until your current upload finishes.');
-        const expected=++generation;connectedKey='';clearUploadView();state.reviewSnapshot=null;state.reviewStale=false;state.intranet=null;state.canonical=null;state.events=[];state.source=null;
+        if(studentEditor.dirty() && !window.confirm('Open another saved version and discard the unsaved class edit?'))return;
+        const expected=++generation;
         const snapshot=await api('/api/review/tasks/'+encodeURIComponent(taskId)+'/snapshot');
         if(expected!==generation || !user)return;
+        STAIRUpload.validatePacket(snapshot.packet);
+        if(!snapshot.tasks.length || snapshot.tasks.some(t=>t.run_id!==snapshot.tasks[0].run_id))throw Error('This saved version could not be opened safely. Your current timetable is retained.');
+        connectedKey='';clearUploadView();state.reviewSnapshot=null;state.reviewStale=false;state.intranet=null;state.canonical=null;state.events=[];state.source=null;
+        if(activeRunId!==snapshot.tasks[0]?.run_id)for(const id of ['analysisStart','analysisEnd','analysisZone'])if($(id))$(id).value='';
+        activeRunId=snapshot.tasks[0]?.run_id || null;reviewController.selectedRunId=activeRunId;connectedResult=null;
+        selected.clear();batchDefaultsKey='';dateOverrides.clear();
         applyReviewSnapshot(snapshot);connectedKey=sourceKey(snapshot.packet.source);
-        await reviewController.refreshQueue();renderTasks();
-        $('accountEditingStatus').textContent='Saved timetable opened. Reselect the original file if you want to inspect image crops.';
+        renderTasks();renderSaved();
+        $('accountEditingStatus').textContent='Historical saved timetable opened. Review and output now use this selected version. Upload the original again to return to a fresh reading.';
     }
     function renderHistory() {
         const container=$('studentCalendarHistory');container.replaceChildren();
@@ -473,7 +501,7 @@
         if(connecting){pendingSource=true;return;}
         const source=reviewSource().packet?.source,result=reviewSource().result;
         if(!source || state.upload?.busy || !result?.reconstruction)return;
-        const key=sourceKey(source);if(key===connectedKey){renderTasks();return;}
+        const key=sourceKey(source);if(key===connectedKey && result===connectedResult){renderTasks();return;}
         connecting=true;const currentGeneration=generation;
         try {
             $('accountEditingStatus').textContent='Connecting your private editing workspace…';
@@ -481,13 +509,14 @@
                 const response=await fetch('/api/student/source',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-STAIR-Source-ID':source.source_document_id,'X-STAIR-Source-SHA256':source.content_sha256},body:state.upload.file});
                 if(!response.ok){const error=await response.json();throw Error(error.detail || 'The original file did not match.');}
             }
-            if(currentGeneration!==generation || key!==sourceKey(reviewSource().packet?.source))return;
+            if(currentGeneration!==generation || result!==reviewSource().result || key!==sourceKey(reviewSource().packet?.source))return;
             await reviewController.refreshQueue();
             await refresh();
-            const exists=workspace.tasks.some(t=>t.current_event?.revision.source_document_id===source.source_document_id && t.source_sha256===source.content_sha256);
-            if(!exists)await api('/api/review/ingest',STAIRUpload.reviewIngestBody(result));
-            if(currentGeneration!==generation || key!==sourceKey(reviewSource().packet?.source))return;
-            connectedKey=key;await reviewController.refreshQueue();await reviewController.restoreSavedSource();await refresh();
+            const resolved=await api('/api/review/connect-run',STAIRUpload.reviewIngestBody(result));
+            if(currentGeneration!==generation || result!==reviewSource().result || key!==sourceKey(reviewSource().packet?.source))return;
+            activeRunId=resolved.run_id;reviewController.selectedRunId=activeRunId;connectedResult=result;
+            connectedKey=key;selected.clear();batchDefaultsKey='';dateOverrides.clear();
+            await reviewController.refreshQueue();await reviewController.restoreSavedSource();await refresh();
             if(currentGeneration!==generation || !user)return;
             $('accountEditingStatus').textContent='Editing is ready. Your changes are private to '+user.username+'.';
             status('Timetable connected. Select your classes and choose the date settings once.');
@@ -496,10 +525,12 @@
     }
     window.STAIRAccount={sourceChanged(){
         if(user) {
+            const reading=state.upload || state.intranet;
+            if(reading && reading!==connectedResult){if(activeRunId)for(const id of ['analysisStart','analysisEnd','analysisZone'])if($(id))$(id).value='';activeRunId=null;reviewController.selectedRunId=null;$('accountEditingStatus').textContent=reading.busy?'Reading this timetable. Editing connects when it is ready.':reading.reconstruction && reviewSource().packet?.events?.length?'Connecting this reading to your saved versions...':'No editable classes in this reading. Try another timetable type or a clearer source. Your saved versions are retained.';}
             const packet=reviewSource().packet;
             const capture=sourceKey(packet?.source);
             const captureChanged=capture!==lastCaptureKey;
-            if(captureChanged){selected.clear();batchDefaultsKey='';batchProblems.clear();dateOverrides.clear();$('studentBatchProblems').replaceChildren();lastCaptureKey=capture;comparison=null;$('studentComparison').textContent='';}
+            if(captureChanged){for(const id of ['analysisStart','analysisEnd','analysisZone'])if($(id))$(id).value='';selected.clear();batchDefaultsKey='';batchProblems.clear();dateOverrides.clear();$('studentBatchProblems').replaceChildren();lastCaptureKey=capture;comparison=null;$('studentComparison').textContent='';}
             const signature=sourceKey(packet?.source)+':'+(packet?.events || []).map(e=>e.revision.revision_id).join(',');
             if(signature!==lastSignature) {
                 lastSignature=signature;invalidatePlan(!packet?'Upload a timetable or open a saved one to begin.':captureChanged?'Timetable opened. Select your classes and choose the date settings once.':'Class details changed. Check the selection and preview again.');

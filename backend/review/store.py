@@ -102,6 +102,19 @@ class ReviewStore:
             self._runs[run_id]=run
             return tuple(tasks)
 
+    def connect_run(self,request,principal):
+        """Resolve an exact bound extraction, never a similar source or event set."""
+        self.authority.require(principal,'queue')
+        self.authority.require_source(principal,request.source_packet.source)
+        bound=bind_input(request)
+        run_id=digest({'input':bound.input_digest,'reconstruction':bound.reconstruction_digest})
+        with self._lock:
+            if run_id not in self._runs:
+                ReviewStore.ingest(self,request,principal)
+            tasks=[str(t.view.task_id) for t in self._tasks.values()
+                   if t.view.run_id==run_id and self._visible(t.view,principal)]
+            return {'run_id':run_id,'task_ids':tasks}
+
     def _current_view(self,view):
         # Historical signed decisions remain intact in the journal. A restarted
         # or revoked host must not present their old ACCEPT as current authority.
@@ -127,13 +140,20 @@ class ReviewStore:
         return self.authority.allows_source(principal,self._source(view.run_id)) and (
             'oversee' in principal.permissions or view.assignee==principal.actor_id)
 
-    def queue_summary(self,principal,offset=0,limit=50):
+    def queue_summary(self,principal,offset=0,limit=50,*,include_source=False):
         self.authority.require(principal,'read')
         with self._lock:
             views=[self._current_view(t.view) for t in self._tasks.values() if self._visible(t.view,principal)]
             views.sort(key=lambda t:(t.created_at,str(t.task_id)))
+            rows=[v.model_dump(mode='json') for v in views[offset:offset+limit]]
+            if include_source:
+                hashes={v.run_id:self._source(v.run_id).content_sha256 for v in views[offset:offset+limit]}
+                for row in rows:
+                    row['source_sha256']=hashes[row['run_id']]
+                    row['extraction_profile']=self._runs[row['run_id']].snapshot.profile
+                    row['source_route']=self._source(row['run_id']).route
             return {'total':len(views),'states':{s.value:sum(t.state==s for t in views) for s in ReviewState},
-                'tasks':[v.model_dump(mode='json') for v in views[offset:offset+limit]],
+                'tasks':rows,
                 'next_offset':offset+limit if offset+limit<len(views) else None,'storage':self.storage_kind}
 
     def assign(self,task_id,assignee,expected_etag,principal):

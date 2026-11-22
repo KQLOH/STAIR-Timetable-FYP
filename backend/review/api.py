@@ -130,6 +130,13 @@ async def ingest(request:Request):
     return {'task_ids':ids}
 
 
+@router.post('/api/review/connect-run')
+async def connect_run(request:Request):
+    store,principal=_bridge(request)
+    payload=await _body(request,AssessmentInput,max_bytes=MAX_REVIEW_INGEST_BYTES)
+    return await _invoke(store.connect_run,payload,principal)
+
+
 @router.get('/api/review/queue')
 async def queue(request:Request,offset:int=Query(default=0,ge=0),limit:int=Query(default=50,ge=1,le=100)):
     store,principal=_bridge(request)

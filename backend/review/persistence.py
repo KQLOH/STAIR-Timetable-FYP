@@ -109,7 +109,7 @@ def _persisted(method, write=False):
                 self._transaction_active = True
                 try:
                     value = method(self, *args, **kwargs)
-                    if write:
+                    if write and (write != 'changed' or self._dump() != before):
                         self.journal.append(self._dump())
                     return value
                 except (OSError, RuntimeError):
@@ -193,6 +193,7 @@ class PersistentReviewStore(ReviewStore):
             raise ReviewError('REVIEW_STORAGE_INVALID_STATE', 409) from None
         self._runs, self._tasks = runs, tasks
 
+    connect_run = _persisted(ReviewStore.connect_run, 'changed')
     ingest = _persisted(ReviewStore.ingest, True)
     assign = _persisted(ReviewStore.assign, True)
     start = _persisted(ReviewStore.start, True)

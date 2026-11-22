@@ -89,6 +89,7 @@ function invalidateReviewDiagnostics(source) {
 }
 
 function applyReviewSnapshot(snapshot) {
+    if(globalThis.STAIRAccountMode && (!reviewController.selectedRunId || snapshot.tasks.some(t=>t.run_id!==reviewController.selectedRunId)))return false;
     const active=reviewSource().packet;
     // Selecting a task must never merge it into a different local capture.
     if (active && !sameReviewCapture(snapshot.packet.source)) return false;
@@ -1091,7 +1092,7 @@ const uploadController = new STAIRUpload.Controller({base:API_BASE, notify:resul
     if (image) STAIRUpload.drawBoxes(image.parentElement, image, result);
     STAIRUpload.renderEvidence(result);
     renderEverything();
-    if(!result.busy && result.reconstruction && reviewController?.session)queueMicrotask(()=>reviewController.restoreSavedSource());
+    if(!globalThis.STAIRAccountMode && !result.busy && result.reconstruction && reviewController?.session)queueMicrotask(()=>reviewController.restoreSavedSource());
 }});
 
 function setupReaderSelection() {

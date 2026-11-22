@@ -47,12 +47,17 @@ def adapt_extraction(document: DocumentEvidence) -> CanonicalTimetable:
     route = "native_pdf" if document.route_type == "upload_pdf" else (
         "text" if document.route_type == "upload_text" else "ocr"
     )
+    spans = _contract_evidence(document)
+    # A raster PDF is still the same original PDF, but its readings are OCR.
+    # Native/mixed documents retain their existing route and per-span evidence.
+    if document.route_type == "upload_pdf" and spans and all(s.route == "ocr" for s in spans):
+        route = "ocr"
     source = SourceDocument(
         source_document_id=document.source_id, content_sha256=document.checksum,
         route=route, media_type=document.media_type, content_hash_basis="original_bytes",
     )
     issues = tuple(ParseIssue(code=warning, detail="Extraction warning retained.") for warning in document.warnings)
-    return CanonicalTimetable(source=source, evidence=_contract_evidence(document), issues=issues)
+    return CanonicalTimetable(source=source, evidence=spans, issues=issues)
 
 
 def _baseline_page(document: DocumentEvidence, page, pipeline: str) -> EvaluationDocumentEvidence:
