@@ -9,7 +9,7 @@ After installing the existing dependencies below, double-click **[Start STAIR.cm
 
 This additive account host includes per-account encrypted history, revision-bound synchronization plans, JSON export/reference comparison, personal completeness checks and optional OAuth for a configured secondary Google test calendar. It remains a local FYP application. Registered ACCEPT and independently verified analysis still require their genuine research evidence; personal confirmation does not establish them. See the **[student workflow, Google setup and limitations](docs/student-account-workflow.md)**. The older operator modes documented below remain available separately.
 
-For the account-local strict FR5/FR6 bridge, start the same launcher with `--calendar-policy registered-accept`. This policy accepts only current AUTHENTIC registry receipts and source-supported dates, with separate preview approval. Missing approved evidence blocks output; the default personal sandbox is not automatically promoted. See [strict output requirements](docs/student-account-workflow.md#strict-registered-accept-output). Registered FR7/P1-A and formal research evaluation remain incomplete.
+The normal launcher uses the account-local strict FR5/FR6 bridge (`--calendar-policy registered-accept`). This policy accepts only current AUTHENTIC registry receipts and source-supported dates, with separate preview approval. Missing approved evidence blocks output while saved calendar entries remain viewable. The optional `--calendar-policy human-confirmed` personal sandbox is separate from FR6 ACCEPT eligibility and is never promoted to registered acceptance. See [strict output requirements](docs/student-account-workflow.md#strict-registered-accept-output). Registered FR7/P1-A and formal research evaluation remain incomplete.
 
 Operational FR7 now includes an opt-in minimized provider interface, structured fact/window post-checks and facts-only fallback. Approved source context can also supply teaching weeks and replacement dates to strict output. Neither feature fabricates approval or enables registered experiments; see [configuration, privacy and acceptance boundaries](docs/grounded-analysis.md).
 
@@ -17,10 +17,10 @@ Optional Google setup: open **Review & output → Google setup guide**. The laun
 
 The working system provides timetable extraction, source-linked class review, explicit human corrections, revision tracking, revalidation and a read-only calendar preview. The optional Windows review host authenticates the local Windows account and requires console consent for the exact uploaded file. It stores review history locally using user-scope DPAPI encryption.
 
-Use the working-system checkpoint branch below. The project owner controls publication; setup details are in [the setup guide](docs/setup.md).
+Use main for the current student account application; older checkpoint branches do not include later teammate updates. The project owner controls publication; setup details are in [the setup guide](docs/setup.md).
 
 ```powershell
-git clone --branch codex/student-system-completion https://github.com/KQLOH/STAIR-Timetable-FYP.git
+git clone --branch main https://github.com/KQLOH/STAIR-Timetable-FYP.git
 Set-Location STAIR-Timetable-FYP
 ```
 

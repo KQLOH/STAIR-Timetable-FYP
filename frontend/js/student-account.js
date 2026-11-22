@@ -41,6 +41,16 @@
         if(typeof uploadController!=='undefined')uploadController.cancel({notify:false});
         clearUploadView();state.events=[];state.source=null;state.canonical=null;state.intranet=null;
         state.reviewSnapshot=null;state.reviewStale=false;state.meta=null;state.connectionToken=null;state.studentName=null;
+        // Account-bound drafts must not remain visible after the session ends.
+        for(const id of ['copiedTimetableText','fileInput','studentBatchNote','studentBatchExcluded',
+            'studentBatchStart','studentBatchEnd','studentBatchCustomTimezone','analysisStart','analysisEnd',
+            'analysisZone','analysisScope','analysisCohort','studyStart','studyEnd']) {
+            if($(id))$(id).value='';
+        }
+        if($('studentBatchTimezone'))$('studentBatchTimezone').value='';
+        if($('studentBatchFrequency'))$('studentBatchFrequency').value='ONCE';
+        if($('studentBatchConfirmed'))$('studentBatchConfirmed').checked=false;
+        for(const input of $('studentCompletenessChecks')?.querySelectorAll('input') || [])input.checked=false;
         $('documentPreview')?.replaceChildren();
         for(const id of ['accountSavedSources','studentScheduleClasses','studentCalendarHistory','studentPlan','studentComparison'])$(id)?.replaceChildren();
         renderEverything();
@@ -51,11 +61,17 @@
     window.fetch = async (input, options={}) => {
         const target=new URL(typeof input==='string'?input:input.url,location.href);
         if(target.origin===location.origin && target.pathname.startsWith('/api/')) {
+            const requestGeneration=generation;
+            const authenticationRequest=['/api/student/login','/api/student/register'].includes(target.pathname);
             const headers=new Headers(options.headers || (input instanceof Request?input.headers:undefined));
             const method=(options.method || (input instanceof Request?input.method:'GET')).toUpperCase();
             if(method!=='GET' && csrf)headers.set('X-STAIR-CSRF',csrf);
             const response=await nativeFetch(input,{...options,headers,credentials:'same-origin',cache:'no-store',redirect:'error'});
-            if(response.status===401 && user && !['/api/student/login','/api/student/register'].includes(target.pathname)) {
+            if(requestGeneration!==generation && !authenticationRequest) {
+                const cancelled=new Error('Your timetable or sign-in changed. Reopen the current timetable and try again.');
+                cancelled.name='AbortError';throw cancelled;
+            }
+            if(response.status===401 && user && !authenticationRequest) {
                 clearSession();$('studentLoginMessage').textContent='Your session ended. Sign in again to continue.';
             }
             return response;
@@ -67,7 +83,7 @@
     async function api(path, body, options={}) {
         const response=await fetch(path,{...options,method:body===undefined?'GET':'POST',
             headers:body===undefined?options.headers:{'Content-Type':'application/json',...options.headers},
-            ...(body===undefined?{}:{body:JSON.stringify(body)})});
+            ...(body===undefined?{}:{body:typeof body==='string'?body:JSON.stringify(body)})});
         let result;try{result=await response.json();}catch{throw Error('The server did not return a valid response. Reload and check your saved results.');}
         if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Check the form fields and try again.');
         return result;
@@ -97,7 +113,7 @@
             $('studentSignIn').disabled=true;$('studentCreateAccount').disabled=true;$('studentLoginMessage').textContent='Signing you in…';
             try {
                 const data=await api('/api/student/'+(create?'register':'login'),{username:$('studentUsername').value,password:$('studentPassword').value});
-                csrf=data.csrf;user=data.user;$('studentPassword').value='';await ready();
+                generation++;csrf=data.csrf;user=data.user;$('studentPassword').value='';await ready();
             }catch(error){$('studentLoginMessage').textContent=error.message;}
             finally{$('studentSignIn').disabled=false;$('studentCreateAccount').disabled=false;}
         };
@@ -244,11 +260,12 @@
         return (workspace?.tasks || []).filter(t=>t.current_event?.revision.source_document_id===capture.source_document_id && t.source_sha256===capture.content_sha256);
     }
     async function ready() {
-        const info=await api('/api/student/session');csrf=info.csrf;user=info.user;
+        const expected=generation;
+        const info=await api('/api/student/session');if(expected!==generation)return;csrf=info.csrf;user=info.user;
         $('studentAccountName').textContent=user.username;document.querySelector('.app-shell').inert=false;$('studentLogin').close();
         $('studentLoginMessage').textContent='';
         attachReviewTransport();
-        await refresh();renderGoogle(info.google);
+        await refresh();if(expected!==generation)return;renderGoogle(info.google);
         const strict=info.calendar_policy==='registered-accept';
         $('studentCalendarPolicy').textContent=strict
             ? (info.research_accept_available?'Strict output: only a current registered ACCEPT with source-supported dates can be saved. Preview and explicit approval are still required.':'Strict output is waiting for approved validation evidence. Checking a class yourself cannot unlock it; existing saved classes remain available in Calendar.')
@@ -468,13 +485,13 @@
             await reviewController.refreshQueue();
             await refresh();
             const exists=workspace.tasks.some(t=>t.current_event?.revision.source_document_id===source.source_document_id && t.source_sha256===source.content_sha256);
-            if(!exists)await api('/api/review/ingest',JSON.parse(STAIRUpload.reviewIngestBody(result)));
+            if(!exists)await api('/api/review/ingest',STAIRUpload.reviewIngestBody(result));
             if(currentGeneration!==generation || key!==sourceKey(reviewSource().packet?.source))return;
             connectedKey=key;await reviewController.refreshQueue();await reviewController.restoreSavedSource();await refresh();
             if(currentGeneration!==generation || !user)return;
             $('accountEditingStatus').textContent='Editing is ready. Your changes are private to '+user.username+'.';
             status('Timetable connected. Select your classes and choose the date settings once.');
-        }catch(error){$('accountEditingStatus').textContent='Editing could not connect: '+error.message;status(error.message,true);}
+        }catch(error){if(currentGeneration===generation && user){$('accountEditingStatus').textContent='Editing could not connect: '+error.message;status(error.message,true);}}
         finally{connecting=false;if(pendingSource){pendingSource=false;queueMicrotask(connectSource);}}
     }
     window.STAIRAccount={sourceChanged(){
@@ -501,7 +518,8 @@
     }};
     async function boot() {
         makePanels();makeGate();
-        try {await ready();}catch(error) {clearSession();if(error.message!=='Please sign in to continue.')$('studentLoginMessage').textContent=error.message;}
+        const expected=generation;
+        try {await ready();}catch(error) {if(expected===generation){clearSession();if(error.message!=='Please sign in to continue.')$('studentLoginMessage').textContent=error.message;}}
         document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible' && user)action(async()=>{await api('/api/student/session');});});
     }
     if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();

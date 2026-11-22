@@ -388,7 +388,7 @@ def create_student_app(accounts, *, origin='http://127.0.0.1:8020', google_facto
 
 
 def build_student_app(directory, *, origin='http://127.0.0.1:8020', registry=None,
-                      calendar_policy='human-confirmed', calendar_context=None, grounded_service=None, google_config=None):
+                      calendar_policy='registered-accept', calendar_context=None, grounded_service=None, google_config=None):
     from backend.review.persistence import ReviewJournal
     from backend.review.windows_security import current_actor
     actor = current_actor()

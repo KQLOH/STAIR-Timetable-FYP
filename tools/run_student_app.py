@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--google-calendar-id', help='Dedicated secondary test calendar ID')
     parser.add_argument('--check-google-config', action='store_true', help='Validate configuration offline, then exit')
     parser.add_argument('--calendar-policy', choices=('human-confirmed', 'registered-accept'),
-                        default='human-confirmed',
+                        default='registered-accept',
                         help='Strict research output requires authentic ACCEPT and source-backed dates')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:

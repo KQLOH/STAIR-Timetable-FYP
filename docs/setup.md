@@ -2,10 +2,10 @@
 
 The README in the branch being reviewed is the primary setup guide. The repository's default branch can lag the owner's unpublished local work. Clone the **published branch supplied by the owner**, not an assumed historical release branch.
 
-For the current working-system checkpoint, clone this branch:
+For the current student account application, clone main:
 
 ```powershell
-git clone --branch codex/student-system-completion https://github.com/KQLOH/STAIR-Timetable-FYP.git
+git clone --branch main https://github.com/KQLOH/STAIR-Timetable-FYP.git
 Set-Location STAIR-Timetable-FYP
 ```
 

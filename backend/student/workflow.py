@@ -8,6 +8,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Literal
 from secrets import token_hex
+import json
 
 from pydantic import Field, model_validator
 from backend.models.evidence import ContractModel
@@ -111,6 +112,37 @@ def owned_task(accounts, session, task_id):
     return store, task
 
 
+
+def supported_value(event, name):
+    """A planning checkbox cannot resolve competing field readings.
+
+    Match the current selected value against every retained alternative, using
+    the same typed JSON/plain-reading semantics as observed workload analysis.
+    Explicit source-linked corrections replace these observations normally.
+    """
+    value = getattr(event.revision.content, name)
+    observation = next((o for o in event.revision.observations if o.field_name == name), None)
+    if value is None or observation is None or observation.state.value != 'PRESENT':
+        return False
+    for alternative in observation.alternatives:
+        if alternative.normalized_value is None:
+            return False
+        readings = [alternative.normalized_value]
+        try:
+            readings.append(json.loads(alternative.normalized_value))
+        except (ValueError, TypeError):
+            pass
+        for reading in readings:
+            try:
+                if getattr(EventContent.model_validate({name: reading}), name) == value:
+                    break
+            except ValueError:
+                continue
+        else:
+            return False
+    return True
+
+
 def occurrences(task, schedule, user_id):
     event = task.current_event
     content = event.revision.content
@@ -120,12 +152,14 @@ def occurrences(task, schedule, user_id):
         raise ReviewError('A correction still needs checking. Use Check saved class before scheduling.', 409)
     if event.extraction_status.value in {'CONFLICTING', 'UNAVAILABLE'}:
         raise ReviewError('Resolve conflicting source readings before scheduling.', 409)
-    observations = {o.field_name: o for o in event.revision.observations}
     for name in ('start_time', 'end_time'):
-        if not getattr(content, name) or name not in observations or observations[name].state.value != 'PRESENT':
-            raise ReviewError('Check and correct the class start and end times first.', 409)
-    if not (content.course_code or content.course_name):
-        raise ReviewError('A class needs a course name or code.', 409)
+        if not supported_value(event, name):
+            raise ReviewError('Check and correct the class start and end times first. Resolve uncertain source readings in Edit class.', 409)
+    if not (supported_value(event, 'course_code') or supported_value(event, 'course_name')):
+        raise ReviewError('A class needs a source-supported course name or code. Resolve uncertain readings in Edit class.', 409)
+    for name in ('course_code', 'course_name', 'session_type', 'date', 'day_of_week', 'source_timezone', 'location'):
+        if getattr(content, name) is not None and not supported_value(event, name):
+            raise ReviewError('Resolve the uncertain ' + name.replace('_', ' ') + ' reading in Edit class before scheduling.', 409)
     # Proven hard failures may never be cleared merely by ticking a checkbox.
     if any(f.severity == 'HARD' and f.passed is False for f in task.decision.findings):
         raise ReviewError('This class has a failed safety check. Correct it and run Check changes first.', 409)
@@ -321,7 +355,9 @@ def local_preview(accounts, session, task_ids, target='local', remote=None):
         for key in list(plans):
             if plans[key]['expires'] < accounts.clock() and plans[key]['outcome'] is None:
                 plans.pop(key)
-        if len(plans) >= 50:
+        # Completed results remain available for history/reconciliation. Only
+        # outstanding previews consume the bounded active-preview allowance.
+        if sum(plan['outcome'] is None for plan in plans.values()) >= 50:
             raise ReviewError('Too many previews. Start a new session later or use existing results.', 409)
         plans[plan['id']] = plan
     return plan

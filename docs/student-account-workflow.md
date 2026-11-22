@@ -78,7 +78,7 @@ RO1–RO4/RQ1–RQ4, baseline definitions and formal evaluation gates remain unc
 
 Current extension: approved source-context files can now supply teaching weeks and exceptions, and operational grounded analysis has a configured-provider path with protected completeness/consent checks. See [current setup and boundaries](grounded-analysis.md). The historical limits below describe the original strict-bridge checkpoint; formal research registration/evaluation remains incomplete.
 
-The account launcher now supports `--calendar-policy registered-accept`. This is a separate host-selected policy; ordinary browser requests cannot change it. Without an authentic approved operating point, strict output remains blocked with a readable explanation. Existing saved classes can still be viewed. The default `human-confirmed` policy retains the application sandbox and is labelled as personal confirmation, not research ACCEPT.
+The account launcher now supports `--calendar-policy registered-accept`. This is a separate host-selected policy; ordinary browser requests cannot change it. Without an authentic approved operating point, strict output remains blocked with a readable explanation. Existing saved classes can still be viewed. Normal startup defaults to `registered-accept`. The explicit `--calendar-policy human-confirmed` option retains the separate personal application sandbox; its outputs are not FR6 registered ACCEPT results.
 
 Start the strict policy, initially blocked when evidence is unavailable:
 
