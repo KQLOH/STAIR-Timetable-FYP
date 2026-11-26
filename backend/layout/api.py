@@ -6,7 +6,7 @@ from pydantic import Field
 from backend.models.evidence import ContractModel
 from backend.models.event import CanonicalTimetable
 from backend.reconstruction.models import Context
-from backend.review.api import _body, _decision, MAX_REVIEW_INGEST_BYTES
+from backend.review.api import _body, _decision, MAX_ASSESSMENT_BYTES
 from backend.layout.service import assess_layout
 from backend.layout.ruled_models import RuledEvidence
 from backend.layout.block_models import BlockEvidence
@@ -45,7 +45,7 @@ async def block_assessment(request:Request):
     from backend.layout.block_grid import assess_blocks, reconstruct_blocks
     # Full S2b envelopes duplicate word/region evidence. Keep compatibility with
     # these bounded clients as well as the preferred compact digest envelope.
-    payload=await _body(request,BlockAssessmentInput,max_bytes=MAX_REVIEW_INGEST_BYTES)
+    payload=await _body(request,BlockAssessmentInput,max_bytes=MAX_ASSESSMENT_BYTES)
     if payload.reconstruction_context!=Context():raise HTTPException(422,'S2B_CONTEXT_UNSUPPORTED')
     # A digest-only envelope avoids returning duplicated OCR evidence in the
     # request. Recompute all content from the bound source; retain body caps.

@@ -78,3 +78,29 @@ Do not bind these local prototypes to `0.0.0.0` or change ports/origins casually
 The test runner discovers current synthetic unittest modules and executes the independent Node transport security check. The JSON result reports failures, errors and skips separately. No private labels, retained journals or real review approval are required. Windows-only tests skip on unsupported operating systems; live OCR checks can skip if Tesseract is absent. Such runs are not equivalent to the fully provisioned Windows result.
 
 See [supervisor publication](supervisor-review.md), [scope](scope-and-status.md) and [privacy](public-safety.md). Historical manifests and earlier results remain historical; they are not a current accuracy claim.
+
+## Assessment size and checkout troubleshooting
+
+Full OCR reconstruction envelopes repeat source, word and derived evidence. The
+public `/api/policy/assess` and colored-grid `/api/layout/s2b/assess` endpoints
+accept at most 8 MiB of JSON, including requests without Content-Length. Other
+review forms retain their 2 MiB limit. Evidence limits, source binding and digest
+checks still apply. The colored-grid frontend sends a compact digest envelope;
+the backend recomputes its reconstruction before assessment.
+
+`python -m unittest discover -s tests -p test_assessment_capacity.py -v` checks
+the reported 3,027,125-byte size using synthetic evidence and JSON whitespace
+padding, compact/full decision equivalence, tampering and the 8 MiB boundary.
+It does not replay the original private screenshot. Actual OCR on invented
+colored images is covered separately by `test_s2b_blocks.py`.
+
+Run the backend and tests from the same checkout. This source tree includes the
+tracked `tests/ui_review_checks.js`, used by all eight `test_ui_review.py` cases.
+A different project copy can still contain the old size limit or omit this file;
+passing tests here do not certify that copy. Restart the backend after updates.
+
+`registered` reconstruction remains HTTP 409 while the approved research gates
+are outstanding. Historical comparison, reviewer and test-seal records require
+verification against the exact code, frozen configuration, source/gold versions
+and scoring protocol. A local RQ4 dry run or AI-proposed scores confirmed by a
+human do not by themselves establish the required independent evaluation.

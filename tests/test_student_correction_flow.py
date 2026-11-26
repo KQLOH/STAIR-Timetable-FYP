@@ -26,7 +26,9 @@ class StudentCorrectionFlowTests(unittest.TestCase):
         r=self.client.post('/api/review/ingest',content=' '*(MAX_REVIEW_INGEST_BYTES+1),headers={**self.headers,'Content-Type':'application/json'})
         self.assertEqual(r.status_code,413)
         r=self.client.post('/api/policy/assess',content=body,headers={'Content-Type':'application/json'})
-        self.assertEqual(r.status_code,413)
+        self.assertEqual(r.status_code,200,r.text)
+        # Public assessment is stateless even when it accepts a full OCR envelope.
+        self.assertEqual(app.state.m5_review_bridge.store.queue_summary(self.actor,0,50)['total'],1)
 
     def test_explicit_two_field_assertions_keep_history_and_block_writes(self):
         self.enable();before=self.task.current_event

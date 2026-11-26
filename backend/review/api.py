@@ -24,8 +24,9 @@ def _no_cache(response:Response):
 
 router=APIRouter(dependencies=[Depends(_no_cache)])
 MAX_BODY_BYTES=2*1024*1024
-# Full bound S2b graphs include source, word and derived evidence. Only the
-# authenticated queue-ingestion route accepts this larger bounded envelope.
+# Full bound OCR graphs duplicate source, word and derived evidence. Assessment
+# needs the same bounded envelope as ingestion; mutation forms retain 2 MiB.
+MAX_ASSESSMENT_BYTES=8*1024*1024
 MAX_REVIEW_INGEST_BYTES=8*1024*1024
 
 
@@ -110,7 +111,7 @@ async def _invoke(function,*args,**kwargs):
 
 @router.post('/api/policy/assess')
 async def policy_assess(request:Request):
-    payload=await _body(request,AssessmentInput)
+    payload=await _body(request,AssessmentInput,max_bytes=MAX_ASSESSMENT_BYTES)
     run=await _invoke(bind_input,payload)
     registry=getattr(request.app.state,'m5_operating_registry',None)
     if registry is not None and registry.mode!='TEST_ONLY':registry=None

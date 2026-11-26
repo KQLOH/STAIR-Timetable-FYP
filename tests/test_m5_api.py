@@ -5,7 +5,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.review.api import ReviewBridge
+from backend.review.api import ReviewBridge, MAX_ASSESSMENT_BYTES
 from backend.review.auth import TrustedHostAuthority
 from backend.review.store import ReviewStore
 from test_m5_policy import fixture
@@ -60,7 +60,7 @@ class APIReviewTests(unittest.TestCase):
         self.assertNotIn('secret-private',r.text)
 
     def test_request_limit(self):
-        r=self.client.post('/api/policy/assess',content=b' '*2097153,headers={'Content-Type':'application/json'})
+        r=self.client.post('/api/policy/assess',content=b' '*(MAX_ASSESSMENT_BYTES+1),headers={'Content-Type':'application/json'})
         self.assertEqual(r.status_code,413)
 
     def test_media_type(self): self.assertEqual(self.client.post('/api/policy/assess',content=b'x').status_code,415)
